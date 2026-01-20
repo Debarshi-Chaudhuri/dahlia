@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # LocalStack - AWS services emulation (DynamoDB, SQS)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dahlia-network
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  sqs-admin-ui:
+    image: akilamaxi/sqs-admin-ui:v1
+    container_name: sqs-admin-ui
+    platform: linux/amd64
+    ports:
+      - "9080:8080"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+      - SQS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - dahlia-network
+
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    user: root
+    ports:
+      - "9000:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    command: >
+      -jar DynamoDBLocal.jar
+      -sharedDb
+      -dbPath /home/dynamodblocal/data
+    environment:
+      AWS_ACCESS_KEY_ID: dummy
+      AWS_SECRET_ACCESS_KEY: dummy
+      AWS_DEFAULT_REGION: us-east-1
+    networks:
+      - dahlia-network
+
+  # ZooKeeper - Distributed coordination
+  zookeeper:
+    container_name: dahlia-zookeeper
+    image: zookeeper:3.8
+    ports:
+      - "2181:2181"
+    environment:
+      - ZOO_MY_ID=1
+      - ZOO_SERVERS=server.1=0.0.0.0:2888:3888;2181
+      - ZOO_TICK_TIME=2000
+      - ZOO_INIT_LIMIT=10
+      - ZOO_SYNC_LIMIT=5
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-logs:/datalog
+    networks:
+      - dahlia-network
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zoonavigator:
+    image: elkozmon/zoonavigator:latest
+    container_name: dahlia-zoonavigator
+    ports:
+      - "8000:8000"
+    environment:
+      - HTTP_PORT=8000
+    depends_on:
+      - zookeeper
+    networks:
+      - dahlia-network
+
+  # Redis - Cache and scheduling
+  redis:
+    container_name: dahlia-redis
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --notify-keyspace-events Ex --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - dahlia-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dynamodb-data:
+    driver: local
+  localstack-data:
+    driver: local
+  zookeeper-data:
+    driver: local
+  zookeeper-logs:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  dahlia-network:
+    driver: bridge

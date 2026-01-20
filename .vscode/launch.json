@@ -1,0 +1,49 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Ingestion Service",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/injestion/main.go",
+            "env": {
+                "AWS_ENDPOINT": "http://localhost:4566",
+                "AWS_REGION": "us-east-1", 
+                "AWS_ACCESS_KEY_ID": "test",
+                "AWS_SECRET_ACCESS_KEY": "test",
+                "REDIS_ADDR": "localhost:6379",
+                "ZK_SERVERS": "localhost:2181"
+            },
+            "console": "integratedTerminal",
+            "args": [],
+            "showLog": true
+        },
+        {
+            "name": "Launch Scheduler Service", 
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/scheduler/main.go",
+            "env": {
+                "AWS_ENDPOINT": "http://localhost:4566",
+                "AWS_REGION": "us-east-1",
+                "AWS_ACCESS_KEY_ID": "test", 
+                "AWS_SECRET_ACCESS_KEY": "test",
+                "REDIS_ADDR": "localhost:6379"
+            },
+            "console": "integratedTerminal",
+            "args": [],
+            "showLog": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Launch Both Services",
+            "configurations": [
+                "Launch Ingestion Service",
+                "Launch Scheduler Service"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,122 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start Infrastructure",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": ["-f", "docker-compose.infra.yml", "up", "-d"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "detail": "Start LocalStack, Redis, and ZooKeeper services"
+        },
+        {
+            "label": "Stop Infrastructure",
+            "type": "shell", 
+            "command": "docker-compose",
+            "args": ["-f", "docker-compose.infra.yml", "down"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "detail": "Stop LocalStack, Redis, and ZooKeeper services"
+        },
+        {
+            "label": "Build Ingestion Service",
+            "type": "shell",
+            "command": "go",
+            "args": ["build", "-o", "injestion", "./cmd/injestion"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Build the ingestion service binary"
+        },
+        {
+            "label": "Build Scheduler Service", 
+            "type": "shell",
+            "command": "go",
+            "args": ["build", "-o", "scheduler", "./cmd/scheduler"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent", 
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Build the scheduler service binary"
+        },
+        {
+            "label": "Build All Services",
+            "dependsOrder": "parallel",
+            "dependsOn": ["Build Ingestion Service", "Build Scheduler Service"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Build both ingestion and scheduler services"
+        },
+        {
+            "label": "Initialize LocalStack",
+            "type": "shell",
+            "command": "./scripts/init-localstack.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Initialize DynamoDB tables and SQS queues in LocalStack"
+        },
+        {
+            "label": "Test Ingestion Service",
+            "type": "shell",
+            "command": "curl",
+            "args": [
+                "-X", "GET",
+                "http://localhost:8090/health"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Test ingestion service health endpoint"
+        },
+        {
+            "label": "Test Scheduler Service",
+            "type": "shell",
+            "command": "curl", 
+            "args": [
+                "-X", "GET",
+                "http://localhost:8091/health"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Test scheduler service health endpoint"
+        }
+    ]
+}

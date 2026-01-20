@@ -1,0 +1,20 @@
+{
+    "go.toolsManagement.checkForUpdates": "local",
+    "go.useLanguageServer": true,
+    "go.gopath": "",
+    "go.goroot": "",
+    "go.lintOnSave": "package",
+    "go.formatTool": "goimports",
+    "go.lintTool": "golangci-lint",
+    "go.buildOnSave": "off",
+    "go.vetOnSave": "package",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "files.exclude": {
+        "injestion": true,
+        "scheduler": true,
+        "localstack-data": true
+    }
+}
