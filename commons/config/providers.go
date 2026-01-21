@@ -1,9 +1,19 @@
 package config
 
 import (
+	"context"
 	"dahlia/commons/routes"
+	cache "dahlia/internal/cache/iface"
+	redisCache "dahlia/internal/cache/redis"
+	coordinator "dahlia/internal/coordinator/iface"
+	zkCoordinator "dahlia/internal/coordinator/zk"
 	"dahlia/internal/logger"
+	"dahlia/internal/slack"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx/fxevent"
 )
@@ -36,4 +46,62 @@ func ProvideRouter(
 	router := routes.NewRouter(config, deps)
 	routeInitializer(router, deps)
 	return router
+}
+
+// ProvideSQSClient provides an SQS client (for LocalStack or AWS)
+func initializeSqsClient(endpoint, region string) (*sqs.Client, error) {
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				if endpoint != "" {
+					return aws.Endpoint{
+						URL:           endpoint,
+						SigningRegion: region,
+					}, nil
+				}
+				return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+			})),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return sqs.NewFromConfig(cfg), nil
+}
+
+func ProvideSQSClient() (*sqs.Client, error) {
+	return initializeSqsClient("http://localhost:4566", "us-east-1")
+}
+
+// ProvideSlackClient provides a Slack client (mock for development)
+func ProvideSlackClient(log logger.Logger) slack.Client {
+	return slack.NewMockClient(log)
+}
+
+// ProvideZooKeeperCoordinator provides a ZooKeeper coordinator for distributed coordination
+func ProvideZooKeeperCoordinator(log logger.Logger) (coordinator.Coordinator, error) {
+	servers := []string{"localhost:2181"}
+	sessionTimeout := 10 * time.Second
+
+	coord, err := zkCoordinator.NewZKCoordinator(servers, sessionTimeout, log)
+	if err != nil {
+		return nil, err
+	}
+
+	return coord, nil
+}
+
+// ProvideRedisCache provides a Redis cache client
+func ProvideRedisCache(log logger.Logger) (cache.Cache, error) {
+	addr := "localhost:6379"
+	password := "" // No password for local development
+	db := 0        // Default DB
+
+	cache, err := redisCache.NewRedisCache(addr, password, db, log)
+	if err != nil {
+		return nil, err
+	}
+
+	return cache, nil
 }

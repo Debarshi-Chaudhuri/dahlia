@@ -14,6 +14,9 @@ func main() {
 		fx.Provide(
 			config.ProvideLogger,
 			config.ProvideRouteDependencies,
+			config.ProvideSlackClient,
+			config.ProvideZooKeeperCoordinator,
+			config.ProvideRedisCache,
 			internalConfig.ProvideSchedulerHealthHandler,
 			internalConfig.ProvideSchedulerRouterConfig,
 			internalConfig.ProvideSchedulerServerConfig,
