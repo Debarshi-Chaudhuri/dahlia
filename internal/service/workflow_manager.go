@@ -2,12 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
-	cache "dahlia/internal/cache/iface"
 	coordinator "dahlia/internal/coordinator/iface"
 	"dahlia/internal/domain"
 	"dahlia/internal/logger"
@@ -24,27 +22,28 @@ type WorkflowManager interface {
 }
 
 type workflowManager struct {
-	workflowRepo repository.WorkflowRepository
-	cache        cache.Cache
-	coordinator  coordinator.Coordinator
-	logger       logger.Logger
-	mu           sync.RWMutex
-	stopCh       chan struct{}
+	workflowRepo    repository.WorkflowRepository
+	coordinator     coordinator.Coordinator
+	logger          logger.Logger
+	mu              sync.RWMutex
+	stopCh          chan struct{}
+	workflowCache   map[string]*domain.Workflow // in-memory cache: "workflowID:version" -> workflow
+	signalTypeIndex map[string][]string         // index: signalType -> []"workflowID:version"
 }
 
 // NewWorkflowManager creates a new workflow manager
 func NewWorkflowManager(
 	workflowRepo repository.WorkflowRepository,
-	cache cache.Cache,
 	coordinator coordinator.Coordinator,
 	log logger.Logger,
 ) WorkflowManager {
 	return &workflowManager{
-		workflowRepo: workflowRepo,
-		cache:        cache,
-		coordinator:  coordinator,
-		logger:       log.With(logger.String("component", "workflow_manager")),
-		stopCh:       make(chan struct{}),
+		workflowRepo:    workflowRepo,
+		coordinator:     coordinator,
+		logger:          log.With(logger.String("component", "workflow_manager")),
+		stopCh:          make(chan struct{}),
+		workflowCache:   make(map[string]*domain.Workflow),
+		signalTypeIndex: make(map[string][]string),
 	}
 }
 
@@ -75,40 +74,99 @@ func (m *workflowManager) Stop(ctx context.Context) error {
 // GetWorkflowsBySignalType returns all workflows for a signal type (cache-first)
 func (m *workflowManager) GetWorkflowsBySignalType(ctx context.Context, signalType string) ([]*domain.Workflow, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 
-	cacheKey := m.getCacheKey(signalType)
+	// Try to get workflow keys from signal type index
+	if workflowKeys, exists := m.signalTypeIndex[signalType]; exists {
+		// Get workflows from cache using workflowID:version keys
+		workflows := make([]*domain.Workflow, 0, len(workflowKeys))
+		allCached := true
 
-	// Try cache first
-	cached, err := m.cache.Get(ctx, cacheKey)
-	if err == nil {
-		var workflows []*domain.Workflow
-		if err := json.Unmarshal([]byte(cached), &workflows); err == nil {
+		for _, key := range workflowKeys {
+			if workflow, found := m.workflowCache[key]; found {
+				workflows = append(workflows, workflow)
+			} else {
+				allCached = false
+				break
+			}
+		}
+
+		if allCached {
+			m.mu.RUnlock()
+			return workflows, nil
+		}
+	}
+	m.mu.RUnlock()
+
+	// Cache miss - query repository with write lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if workflowKeys, exists := m.signalTypeIndex[signalType]; exists {
+		workflows := make([]*domain.Workflow, 0, len(workflowKeys))
+		allCached := true
+
+		for _, key := range workflowKeys {
+			if workflow, found := m.workflowCache[key]; found {
+				workflows = append(workflows, workflow)
+			} else {
+				allCached = false
+				break
+			}
+		}
+
+		if allCached {
 			return workflows, nil
 		}
 	}
 
-	// Cache miss - query repository
 	workflows, err := m.workflowRepo.GetBySignalType(ctx, signalType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get workflows: %w", err)
 	}
 
-	// Update cache
-	m.cacheWorkflows(ctx, signalType, workflows)
+	// Update cache using workflowID:version as keys
+	workflowKeys := make([]string, 0, len(workflows))
+	for _, workflow := range workflows {
+		key := m.getWorkflowKey(workflow.WorkflowID, workflow.Version)
+		m.workflowCache[key] = workflow
+		workflowKeys = append(workflowKeys, key)
+	}
+
+	// Update signal type index
+	m.signalTypeIndex[signalType] = workflowKeys
 
 	return workflows, nil
 }
 
-// GetWorkflow returns a specific workflow version
+// GetWorkflow returns a specific workflow version (cache-first)
 func (m *workflowManager) GetWorkflow(ctx context.Context, workflowID string, version int) (*domain.Workflow, error) {
+	key := m.getWorkflowKey(workflowID, version)
+
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	// Try cache first
+	if workflow, exists := m.workflowCache[key]; exists {
+		m.mu.RUnlock()
+		return workflow, nil
+	}
+	m.mu.RUnlock()
+
+	// Cache miss - query repository with write lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if workflow, exists := m.workflowCache[key]; exists {
+		return workflow, nil
+	}
 
 	workflow, err := m.workflowRepo.GetByID(ctx, workflowID, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get workflow: %w", err)
 	}
+
+	// Cache the workflow
+	m.workflowCache[key] = workflow
 
 	return workflow, nil
 }
@@ -124,16 +182,24 @@ func (m *workflowManager) RefreshCache(ctx context.Context) error {
 		return fmt.Errorf("failed to list workflows: %w", err)
 	}
 
-	// Group by signal type
-	grouped := make(map[string][]*domain.Workflow)
+	// Clear existing caches
+	m.workflowCache = make(map[string]*domain.Workflow)
+	m.signalTypeIndex = make(map[string][]string)
+
+	// Cache workflows by workflowID:version and build signal type index
+	signalTypeMap := make(map[string][]string)
 	for _, workflow := range result.Workflows {
-		grouped[workflow.SignalType] = append(grouped[workflow.SignalType], workflow)
+		key := m.getWorkflowKey(workflow.WorkflowID, workflow.Version)
+		m.workflowCache[key] = workflow
+		signalTypeMap[workflow.SignalType] = append(signalTypeMap[workflow.SignalType], key)
 	}
 
-	// Update cache for each signal type
-	for signalType, workflows := range grouped {
-		m.cacheWorkflows(ctx, signalType, workflows)
-	}
+	// Update signal type index
+	m.signalTypeIndex = signalTypeMap
+
+	m.logger.Info("workflow cache refreshed",
+		logger.Int("workflow_count", len(result.Workflows)),
+		logger.Int("signal_types", len(m.signalTypeIndex)))
 
 	return nil
 }
@@ -149,28 +215,7 @@ func (m *workflowManager) handleRefreshTrigger(data []byte) {
 	}
 }
 
-// cacheWorkflows stores workflows in cache
-func (m *workflowManager) cacheWorkflows(ctx context.Context, signalType string, workflows []*domain.Workflow) {
-	cacheKey := m.getCacheKey(signalType)
-
-	data, err := json.Marshal(workflows)
-	if err != nil {
-		m.logger.Error("failed to marshal workflows",
-			logger.String("signal_type", signalType),
-			logger.Error(err))
-		return
-	}
-
-	// Cache without TTL (invalidated via ZK watch)
-	if err := m.cache.Set(ctx, cacheKey, string(data), 0); err != nil {
-		m.logger.Error("failed to cache workflows",
-			logger.String("signal_type", signalType),
-			logger.Error(err))
-		return
-	}
-}
-
-// getCacheKey generates cache key for signal type
-func (m *workflowManager) getCacheKey(signalType string) string {
-	return fmt.Sprintf("workflow:%s", signalType)
+// getWorkflowKey generates cache key for workflowID and version
+func (m *workflowManager) getWorkflowKey(workflowID string, version int) string {
+	return fmt.Sprintf("%s:%d", workflowID, version)
 }

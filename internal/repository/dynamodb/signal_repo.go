@@ -155,3 +155,56 @@ func (r *signalRepository) QueryBySignalType(ctx context.Context, signalType str
 
 	return signals, nil
 }
+
+// GetSignalsSince returns signals of a specific type and org that arrived after a given time
+func (r *signalRepository) GetSignalsSince(ctx context.Context, signalType, orgID string, since time.Time, until time.Time) ([]*domain.Signal, error) {
+	sinceTimestamp := since.Format(time.RFC3339)
+	untilTimestamp := until.Format(time.RFC3339)
+
+	r.logger.Debug("querying signals since timestamp",
+		logger.String("signal_type", signalType),
+		logger.String("org_id", orgID),
+		logger.String("since", sinceTimestamp),
+		logger.String("until", untilTimestamp))
+
+	// Query using the signal_type_index GSI with timestamp range
+	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("signal_type_index"),
+		KeyConditionExpression: aws.String("signal_type = :type AND #ts BETWEEN :since AND :until"),
+		FilterExpression:       aws.String("org_id = :org_id"),
+		ExpressionAttributeNames: map[string]string{
+			"#ts": "timestamp",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":type":   &types.AttributeValueMemberS{Value: signalType},
+			":since":  &types.AttributeValueMemberS{Value: sinceTimestamp},
+			":until":  &types.AttributeValueMemberS{Value: untilTimestamp},
+			":org_id": &types.AttributeValueMemberS{Value: orgID},
+		},
+		ScanIndexForward: aws.Bool(true), // Ascending order (oldest first)
+	})
+
+	if err != nil {
+		r.logger.Error("failed to query signals since timestamp", 
+			logger.String("since", sinceTimestamp),
+			logger.Error(err))
+		return nil, fmt.Errorf("failed to query signals since %s: %w", sinceTimestamp, err)
+	}
+
+	signals := make([]*domain.Signal, 0, len(result.Items))
+	for _, item := range result.Items {
+		var signal domain.Signal
+		if err := attributevalue.UnmarshalMap(item, &signal); err != nil {
+			r.logger.Warn("failed to unmarshal signal", logger.Error(err))
+			continue
+		}
+		signals = append(signals, &signal)
+	}
+
+	r.logger.Debug("found signals since timestamp",
+		logger.String("since", sinceTimestamp),
+		logger.Int("count", len(signals)))
+
+	return signals, nil
+}

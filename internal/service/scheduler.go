@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	cache "dahlia/internal/cache/iface"
@@ -106,9 +107,21 @@ func (s *Scheduler) ScheduleJob(ctx context.Context, job *domain.ScheduledJob) e
 	executeTime := time.UnixMilli(job.ExecuteAt)
 	currentTime := time.Now()
 
+	s.logger.Debug("scheduling job",
+		logger.String("job_id", job.JobID),
+		logger.String("original_execute_time", executeTime.Format("2006-01-02 15:04:05")),
+		logger.String("current_time", currentTime.Format("2006-01-02 15:04:05")))
+
 	// Check if the job's execution time is in the past or current minute that might have been processed
 	currentMinute := currentTime.Truncate(time.Minute)
 	executeMinute := executeTime.Truncate(time.Minute)
+
+	s.logger.Debug("minute comparison",
+		logger.String("job_id", job.JobID),
+		logger.String("current_minute", currentMinute.Format("2006-01-02 15	:04:05")),
+		logger.String("execute_minute", executeMinute.Format("2006-01-02 15:04:05")),
+		logger.String("execute_before_current", strconv.FormatBool(executeMinute.Before(currentMinute))),
+		logger.String("execute_equals_current", strconv.FormatBool(executeMinute.Equal(currentMinute))))
 
 	// If scheduling for current or past minute, add safety buffer to next processing cycle
 	if executeMinute.Before(currentMinute) || executeMinute.Equal(currentMinute) {
@@ -120,6 +133,10 @@ func (s *Scheduler) ScheduleJob(ctx context.Context, job *domain.ScheduledJob) e
 		// Move to next minute to avoid race condition
 		executeTime = currentMinute.Add(time.Minute)
 		job.ExecuteAt = executeTime.UnixMilli()
+
+		s.logger.Debug("adjusted execution time",
+			logger.String("job_id", job.JobID),
+			logger.String("new_execute_time", executeTime.Format("2006-01-02 15:04:05")))
 	}
 
 	// Save to DynamoDB
@@ -130,6 +147,11 @@ func (s *Scheduler) ScheduleJob(ctx context.Context, job *domain.ScheduledJob) e
 
 	// Add to Redis bucket
 	bucketKey := s.getBucketKey(executeTime)
+
+	s.logger.Debug("adding job to redis bucket",
+		logger.String("job_id", job.JobID),
+		logger.String("bucket_key", bucketKey),
+		logger.String("final_execute_time", executeTime.Format("2006-01-02 15:04:05")))
 
 	if err := s.cache.RPush(ctx, bucketKey, job.JobID); err != nil {
 		s.logger.Error("failed to add job to redis bucket",

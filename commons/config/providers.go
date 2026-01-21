@@ -84,7 +84,7 @@ func ProvideSlackClient(log logger.Logger) slack.Client {
 // ProvideZooKeeperCoordinator provides a ZooKeeper coordinator for distributed coordination
 func ProvideZooKeeperCoordinator(log logger.Logger) (coordinator.Coordinator, error) {
 	servers := []string{"localhost:2181"}
-	sessionTimeout := 10 * time.Second
+	sessionTimeout := 60 * time.Second // Increased for debugging and stability
 
 	coord, err := zkCoordinator.NewZKCoordinator(servers, sessionTimeout, log)
 	if err != nil {

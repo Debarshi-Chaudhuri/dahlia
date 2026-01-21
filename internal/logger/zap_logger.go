@@ -19,7 +19,7 @@ func NewZapLogger() (Logger, error) {
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	config.OutputPaths = []string{"stdout"}
 
-	log, err := config.Build()
+	log, err := config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
 	if err != nil {
 		return nil, err
 	}

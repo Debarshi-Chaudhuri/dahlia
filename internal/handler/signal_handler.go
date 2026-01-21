@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"dahlia/commons/error_handler"
 	"dahlia/commons/handler"
@@ -12,8 +11,6 @@ import (
 	"dahlia/internal/logger"
 	repositoryIface "dahlia/internal/repository/iface"
 	"dahlia/internal/service"
-
-	"github.com/google/uuid"
 )
 
 type SignalHandler struct {
@@ -44,15 +41,7 @@ func (h *SignalHandler) CreateSignalService(
 	req := ioutil.Body
 
 	// Create signal (in memory)
-	signal := &domain.Signal{
-		SignalID:   uuid.New().String(),
-		SignalType: req.SignalType,
-		OrgID:      req.OrgID,
-		Value:      req.Value,
-		Metadata:   req.Metadata,
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		CreatedAt:  time.Now().Unix(),
-	}
+	signal := domain.NewSignal(req.SignalType, req.OrgID, req.Value, req.Metadata, req.Timestamp)
 
 	// Find matching workflows first
 	workflows, err := h.workflowMgr.GetWorkflowsBySignalType(ctx, signal.SignalType)

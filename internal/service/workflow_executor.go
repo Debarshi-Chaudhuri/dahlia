@@ -96,7 +96,7 @@ func (e *workflowExecutor) executeNewWorkflow(ctx context.Context, signal *domai
 
 	// Evaluate conditions
 	if !e.evaluateConditions(ctx, run, workflow, signal) {
-		return nil // Conditions failed, workflow stops
+		return nil // Conditions failed, workflow stops and marked as completed
 	}
 
 	// Execute actions
@@ -117,8 +117,9 @@ func (e *workflowExecutor) resumeWorkflow(ctx context.Context, signal *domain.Si
 	}
 
 	// Mark the delay action as COMPLETED before continuing
+	oldUpdatedAt := run.UpdatedAt
 	run.SetActionCompletedStatus(delayActionIndex)
-	if err := e.runRepo.Update(ctx, run); err != nil {
+	if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 		e.logger.Error("failed to mark delay action as completed", logger.Error(err))
 		return fmt.Errorf("failed to update run status: %w", err)
 	}
@@ -135,8 +136,9 @@ func (e *workflowExecutor) resumeWorkflow(ctx context.Context, signal *domain.Si
 func (e *workflowExecutor) evaluateConditions(ctx context.Context, run *domain.WorkflowRun, workflow *domain.Workflow, signal *domain.Signal) bool {
 	for i, condition := range workflow.Conditions {
 		// Update status to CONDITION_X
+		oldUpdatedAt := run.UpdatedAt
 		run.SetConditionStatus(i)
-		if err := e.runRepo.Update(ctx, run); err != nil {
+		if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 			e.logger.Error("failed to update run status", logger.Error(err))
 		}
 
@@ -145,14 +147,16 @@ func (e *workflowExecutor) evaluateConditions(ctx context.Context, run *domain.W
 			e.logger.Error("condition evaluation error",
 				logger.Int("condition_index", i),
 				logger.Error(err))
+			oldUpdatedAt := run.UpdatedAt
 			run.MarkFailed()
-			e.runRepo.Update(ctx, run)
+			e.runRepo.Update(ctx, run, oldUpdatedAt)
 			return false
 		}
 
 		if !passed {
+			oldUpdatedAt := run.UpdatedAt
 			run.MarkCompleted()
-			e.runRepo.Update(ctx, run)
+			e.runRepo.Update(ctx, run, oldUpdatedAt)
 			return false
 		}
 	}
@@ -202,8 +206,9 @@ func (e *workflowExecutor) executeSingleAction(ctx context.Context, run *domain.
 // prepareAction updates run status to STARTED and creates action log
 func (e *workflowExecutor) prepareAction(ctx context.Context, run *domain.WorkflowRun, action domain.Action, actionIndex int) (*domain.ActionLog, error) {
 	// Update run status to ACTION_{i}_STARTED
+	oldUpdatedAt := run.UpdatedAt
 	run.SetActionStartedStatus(actionIndex)
-	if err := e.runRepo.Update(ctx, run); err != nil {
+	if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 		e.logger.Error("failed to update run status to STARTED", logger.Error(err))
 		return nil, fmt.Errorf("failed to update run status: %w", err)
 	}
@@ -230,8 +235,9 @@ func (e *workflowExecutor) executeDelayAction(ctx context.Context, run *domain.W
 	}
 
 	// Mark run as scheduled (workflow will resume later)
+	oldUpdatedAt := run.UpdatedAt
 	run.SetActionScheduledStatus(actionIndex)
-	if err := e.runRepo.Update(ctx, run); err != nil {
+	if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 		e.logger.Error("failed to update run status to SCHEDULED", logger.Error(err))
 		return false, fmt.Errorf("failed to update run status: %w", err)
 	}
@@ -262,8 +268,9 @@ func (e *workflowExecutor) executeRegularAction(ctx context.Context, run *domain
 	}
 
 	// Update run status to ACTION_{i}_COMPLETED
+	oldUpdatedAt := run.UpdatedAt
 	run.SetActionCompletedStatus(actionIndex)
-	if err := e.runRepo.Update(ctx, run); err != nil {
+	if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 		e.logger.Error("failed to update run status to COMPLETED", logger.Error(err))
 		// Continue even if status update fails - action execution was successful
 	}
@@ -284,8 +291,9 @@ func (e *workflowExecutor) handleActionFailure(ctx context.Context, run *domain.
 		logger.Error(err))
 
 	// Mark run as failed
+	oldUpdatedAt := run.UpdatedAt
 	run.MarkFailed()
-	if updateErr := e.runRepo.Update(ctx, run); updateErr != nil {
+	if updateErr := e.runRepo.Update(ctx, run, oldUpdatedAt); updateErr != nil {
 		e.logger.Error("failed to update run status", logger.Error(updateErr))
 	}
 
@@ -294,8 +302,9 @@ func (e *workflowExecutor) handleActionFailure(ctx context.Context, run *domain.
 
 // completeWorkflow marks workflow run as completed
 func (e *workflowExecutor) completeWorkflow(ctx context.Context, run *domain.WorkflowRun) error {
+	oldUpdatedAt := run.UpdatedAt
 	run.MarkCompleted()
-	if err := e.runRepo.Update(ctx, run); err != nil {
+	if err := e.runRepo.Update(ctx, run, oldUpdatedAt); err != nil {
 		e.logger.Error("failed to mark run as completed", logger.Error(err))
 		return fmt.Errorf("failed to mark run as completed: %w", err)
 	}
@@ -306,10 +315,11 @@ func (e *workflowExecutor) completeWorkflow(ctx context.Context, run *domain.Wor
 // buildRunContext creates execution context for run
 func (e *workflowExecutor) buildRunContext(run *domain.WorkflowRun, signal *domain.Signal, workflow *domain.Workflow) map[string]interface{} {
 	return map[string]interface{}{
-		"run_id":      run.RunID,
-		"workflow_id": workflow.WorkflowID,
-		"signal_id":   signal.SignalID,
-		"signal_type": signal.SignalType,
-		"org_id":      signal.OrgID,
+		"run_id":           run.RunID,
+		"workflow_id":      workflow.WorkflowID,
+		"workflow_version": workflow.Version,
+		"signal_id":        signal.SignalID,
+		"signal_type":      signal.SignalType,
+		"org_id":           signal.OrgID,
 	}
 }

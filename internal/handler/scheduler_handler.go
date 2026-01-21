@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"dahlia/commons/error_handler"
 	"dahlia/commons/handler"
@@ -31,14 +32,9 @@ func (h *SchedulerHandler) ScheduleService(
 ) (dto.ScheduleJobResponse, *error_handler.ErrorCollection) {
 	req := ioutil.Body
 
-	// Schedule job - convert JobType to JobName for domain
-	job := &domain.ScheduledJob{
-		JobName:    req.JobType,
-		JobDetails: req.Payload,
-		ExecuteAt:  req.ExecuteAt,
-		QueueName:  "default",
-		Status:     domain.JobStatusScheduled,
-	}
+	// Use domain constructor to generate UUID and proper timestamps
+	executeAt := time.UnixMilli(req.ExecuteAt)
+	job := domain.NewScheduledJob(req.JobType, req.QueueName, executeAt, req.Payload)
 
 	err := h.scheduler.ScheduleJob(ctx, job)
 

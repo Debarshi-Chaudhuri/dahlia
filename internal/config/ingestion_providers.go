@@ -61,11 +61,10 @@ func ProvideConditionEvaluator(signalRepo repository.SignalRepository, log logge
 
 func ProvideWorkflowManager(
 	workflowRepo repository.WorkflowRepository,
-	cache cache.Cache,
 	coordinator coordinator.Coordinator,
 	log logger.Logger,
 ) service.WorkflowManager {
-	return service.NewWorkflowManager(workflowRepo, cache, coordinator, log)
+	return service.NewWorkflowManager(workflowRepo, coordinator, log)
 }
 
 func ProvideActionExecutor(
@@ -197,7 +196,11 @@ func ProvideIngestionRouteInitializer(
 }
 
 // Lifecycle Management
-func ManageExecutorQueueLifecycle(lc fx.Lifecycle, q queue.Queue, log logger.Logger) {
+func ManageExecutorQueueLifecycle(lc fx.Lifecycle, q queue.Queue, srv *server.HTTPServer, log logger.Logger) {
+	// The HTTP server's lifecycle hooks are automatically managed by Uber FX
+	// when it's passed as a parameter here. We just need to ensure it's in the dependency graph.
+	_ = srv // Explicitly reference to ensure it's invoked
+
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info("starting executor queue consumer")
@@ -206,6 +209,36 @@ func ManageExecutorQueueLifecycle(lc fx.Lifecycle, q queue.Queue, log logger.Log
 		OnStop: func(ctx context.Context) error {
 			log.Info("stopping executor queue consumer")
 			return q.StopConsumer(ctx)
+		},
+	})
+}
+
+func ManageWorkflowManagerLifecycle(lc fx.Lifecycle, workflowMgr service.WorkflowManager, log logger.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			log.Info("starting workflow manager")
+			return workflowMgr.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("stopping workflow manager")
+			return workflowMgr.Stop(ctx)
+		},
+	})
+}
+
+func ManageIngestionSchedulerLifecycle(lc fx.Lifecycle, scheduler service.IScheduler, srv *server.HTTPServer, log logger.Logger) {
+	// The HTTP server's lifecycle hooks are automatically managed by Uber FX
+	// when it's passed as a parameter here. We just need to ensure it's in the dependency graph.
+	_ = srv // Explicitly reference to ensure it's invoked
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			log.Info("starting ingestion scheduler cron jobs")
+			return scheduler.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("stopping ingestion scheduler")
+			return scheduler.Stop(ctx)
 		},
 	})
 }

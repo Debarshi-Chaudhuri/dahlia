@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 
@@ -38,12 +38,15 @@ func HandleFunc[InputDto any, OutputDto any](
 		ioutil.RawBody = bodyBytes
 
 		if len(bodyBytes) > 0 && (c.Request.Method == http.MethodPost || c.Request.Method == http.MethodPut || c.Request.Method == http.MethodPatch) {
-			if err := json.Unmarshal(bodyBytes, &ioutil.Body); err != nil {
-				deps.Logger.Error("unable to unmarshal request body",
+			// Restore the body for ShouldBindJSON to read
+			c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+			if err := c.ShouldBindJSON(&ioutil.Body); err != nil {
+				deps.Logger.Error("unable to bind request body",
 					logger.Error(err),
 					logger.String("raw_body", string(bodyBytes)))
 				SendErrorResponse(c, *new(OutputDto), error_handler.NewErrorCollection().
-					AddError(error_handler.CodeValidationError, "Invalid JSON format", nil))
+					AddError(error_handler.CodeValidationError, err.Error(), nil))
 				return
 			}
 		}

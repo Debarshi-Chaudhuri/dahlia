@@ -2,8 +2,6 @@ package domain
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // ConditionType represents the type of condition
@@ -53,7 +51,7 @@ type Workflow struct {
 }
 
 // NewWorkflow creates a new workflow
-func NewWorkflow(name, signalType string, conditions []Condition, actions []Action) *Workflow {
+func NewWorkflow(workflowID, name, signalType string, conditions []Condition, actions []Action, version int) *Workflow {
 	now := time.Now().UnixMilli()
 
 	if conditions == nil {
@@ -64,8 +62,8 @@ func NewWorkflow(name, signalType string, conditions []Condition, actions []Acti
 	}
 
 	return &Workflow{
-		WorkflowID: uuid.New().String(),
-		Version:    1,
+		WorkflowID: workflowID,
+		Version:    version,
 		Name:       name,
 		SignalType: signalType,
 		Conditions: conditions,

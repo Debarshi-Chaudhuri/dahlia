@@ -53,6 +53,8 @@ func main() {
 		),
 		fx.Invoke(
 			internalConfig.ManageExecutorQueueLifecycle,
+			internalConfig.ManageWorkflowManagerLifecycle,
+			internalConfig.ManageIngestionSchedulerLifecycle,
 		),
 	).Run()
 }

@@ -53,31 +53,18 @@ func (r *runRepository) Create(ctx context.Context, run *domain.WorkflowRun) err
 	return nil
 }
 
-func (r *runRepository) Update(ctx context.Context, run *domain.WorkflowRun) error {
-	// Store the old updated_at for conditional check
-	oldUpdatedAt := run.UpdatedAt
-
-	// Update the updated_at to current time for the new version
-	// Note: The caller should have already updated this, but we ensure it here
-	if run.UpdatedAt == oldUpdatedAt {
-		r.logger.Warn("updated_at was not changed before update call, this might indicate a bug",
-			logger.String("run_id", run.RunID))
-	}
-
+func (r *runRepository) Update(ctx context.Context, run *domain.WorkflowRun, expectedUpdatedAt int64) error {
 	item, err := attributevalue.MarshalMap(run)
 	if err != nil {
 		return fmt.Errorf("failed to marshal run: %w", err)
 	}
 
-	// Use conditional write to ensure the record hasn't been modified
-	// This implements optimistic locking
 	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(r.tableName),
-		Item:      item,
-		// Condition: updated_at must equal the old value (or not exist for new records)
-		ConditionExpression: aws.String("updated_at = :old_updated_at OR attribute_not_exists(updated_at)"),
+		TableName:           aws.String(r.tableName),
+		Item:                item,
+		ConditionExpression: aws.String("updated_at = :expected_updated_at OR attribute_not_exists(updated_at)"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":old_updated_at": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", oldUpdatedAt)},
+			":expected_updated_at": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expectedUpdatedAt)},
 		},
 	})
 
@@ -87,7 +74,8 @@ func (r *runRepository) Update(ctx context.Context, run *domain.WorkflowRun) err
 		if ok := errors.As(err, &conditionalCheckErr); ok {
 			r.logger.Warn("optimistic lock failed - run was modified by another process",
 				logger.String("run_id", run.RunID),
-				logger.Int("expected_updated_at", int(oldUpdatedAt)))
+				logger.Int("expected_updated_at", int(expectedUpdatedAt)),
+				logger.Int("new_updated_at", int(run.UpdatedAt)))
 			return fmt.Errorf("%w: run_id=%s", ErrOptimisticLockFailed, run.RunID)
 		}
 
@@ -306,9 +294,24 @@ func encodeNextToken(lastEvaluatedKey map[string]types.AttributeValue) (string, 
 		return "", nil
 	}
 
-	jsonData, err := json.Marshal(lastEvaluatedKey)
+	// Convert to simple map with just the raw values
+	simpleMap := make(map[string]string)
+	for key, value := range lastEvaluatedKey {
+		switch v := value.(type) {
+		case *types.AttributeValueMemberS:
+			simpleMap[key] = "S:" + v.Value
+		case *types.AttributeValueMemberN:
+			simpleMap[key] = "N:" + v.Value
+		case *types.AttributeValueMemberB:
+			simpleMap[key] = "B:" + base64.StdEncoding.EncodeToString(v.Value)
+		default:
+			return "", fmt.Errorf("unsupported attribute type: %T", value)
+		}
+	}
+
+	jsonData, err := json.Marshal(simpleMap)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal last evaluated key: %w", err)
+		return "", fmt.Errorf("failed to json marshal: %w", err)
 	}
 
 	return base64.StdEncoding.EncodeToString(jsonData), nil
@@ -324,10 +327,36 @@ func decodeNextToken(nextToken string) (map[string]types.AttributeValue, error) 
 		return nil, fmt.Errorf("failed to decode next token: %w", err)
 	}
 
-	var lastEvaluatedKey map[string]types.AttributeValue
-	if err := json.Unmarshal(jsonData, &lastEvaluatedKey); err != nil {
+	var simpleMap map[string]string
+	if err := json.Unmarshal(jsonData, &simpleMap); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal next token: %w", err)
 	}
 
-	return lastEvaluatedKey, nil
+	// Convert back to AttributeValue map
+	result := make(map[string]types.AttributeValue)
+	for key, value := range simpleMap {
+		if len(value) < 2 || value[1] != ':' {
+			return nil, fmt.Errorf("invalid token format for key %s", key)
+		}
+
+		prefix := value[:1]
+		data := value[2:]
+
+		switch prefix {
+		case "S":
+			result[key] = &types.AttributeValueMemberS{Value: data}
+		case "N":
+			result[key] = &types.AttributeValueMemberN{Value: data}
+		case "B":
+			decoded, err := base64.StdEncoding.DecodeString(data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode binary data for key %s: %w", key, err)
+			}
+			result[key] = &types.AttributeValueMemberB{Value: decoded}
+		default:
+			return nil, fmt.Errorf("unsupported attribute type prefix: %s", prefix)
+		}
+	}
+
+	return result, nil
 }

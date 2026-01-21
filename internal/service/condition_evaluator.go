@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"dahlia/internal/domain"
@@ -67,44 +68,93 @@ func (e *conditionEvaluator) Evaluate(ctx context.Context, condition domain.Cond
 }
 
 // evaluateAbsence checks if no signal arrived within duration
+// For absence conditions, this is called AFTER the waiting period has elapsed
 func (e *conditionEvaluator) evaluateAbsence(ctx context.Context, condition domain.Condition, signal *domain.Signal) (bool, error) {
-	// Parse duration
-	duration, err := time.ParseDuration(condition.Duration)
+	// Parse duration with explicit support for common time units
+	duration, err := e.parseDuration(condition.Duration)
 	if err != nil {
-		return false, fmt.Errorf("invalid duration: %w", err)
+		return false, fmt.Errorf("invalid duration '%s': %w", condition.Duration, err)
 	}
 
-	// Calculate expected time
+	e.logger.Debug("evaluating absence condition",
+		logger.String("duration", condition.Duration),
+		logger.String("parsed_duration", duration.String()),
+		logger.String("signal_type", signal.SignalType),
+		logger.String("org_id", signal.OrgID))
+
+	// Parse the original signal time (when the absence timer started)
 	signalTime, err := time.Parse(time.RFC3339, signal.Timestamp)
 	if err != nil {
 		return false, fmt.Errorf("invalid signal timestamp: %w", err)
 	}
 
-	expectedTime := signalTime.Add(-duration)
+	// Calculate the window start time (when we started waiting for absence)
+	windowStartTime := signalTime
 
-	// Query for last signal before current signal
-	lastSignal, err := e.signalRepo.GetLastSignal(ctx, signal.SignalType, signal.OrgID, signalTime)
+	// Calculate current time (when this evaluation is happening - should be ~duration later)
+	currentTime := time.Now()
+	expectedEvalTime := windowStartTime.Add(duration)
+
+	e.logger.Debug("absence condition timing",
+		logger.String("window_start", windowStartTime.String()),
+		logger.String("expected_eval_time", expectedEvalTime.String()),
+		logger.String("current_time", currentTime.String()))
+
+	// Query for any signals that arrived AFTER the original signal within the duration window
+	signals, err := e.signalRepo.GetSignalsSince(ctx, signal.SignalType, signal.OrgID, windowStartTime, currentTime)
 	if err != nil {
-		return false, fmt.Errorf("failed to get last signal: %w", err)
+		return false, fmt.Errorf("failed to check for signals since window start: %w", err)
 	}
 
-	// If no signal found, absence condition is met
-	if lastSignal == nil {
-		return true, nil
+	// Filter out the original signal itself (we only care about NEW signals)
+	newSignalCount := 0
+	for _, s := range signals {
+		if s.SignalID != signal.SignalID {
+			newSignalCount++
+		}
 	}
 
-	// Parse last signal time
-	lastSignalTime, err := time.Parse(time.RFC3339, lastSignal.Timestamp)
-	if err != nil {
-		return false, fmt.Errorf("invalid last signal timestamp: %w", err)
+	e.logger.Debug("absence condition evaluation result",
+		logger.Int("new_signals_found", newSignalCount),
+		logger.String("condition_passed", strconv.FormatBool(newSignalCount == 0)))
+
+	// Condition passes if NO new signals arrived during the absence window
+	return newSignalCount == 0, nil
+}
+
+// parseDuration handles common duration formats that time.ParseDuration might not handle
+func (e *conditionEvaluator) parseDuration(durationStr string) (time.Duration, error) {
+	// First try the standard Go duration parser
+	duration, err := time.ParseDuration(durationStr)
+	if err == nil {
+		return duration, nil
 	}
 
-	// Check if last signal is before expected time
-	if lastSignalTime.Before(expectedTime) {
-		return true, nil
+	// Handle common formats that Go doesn't support by default
+	switch durationStr {
+	case "1m", "1min", "1minute":
+		return time.Minute, nil
+	case "2m", "2min", "2minutes":
+		return 2 * time.Minute, nil
+	case "5m", "5min", "5minutes":
+		return 5 * time.Minute, nil
+	case "10m", "10min", "10minutes":
+		return 10 * time.Minute, nil
+	case "15m", "15min", "15minutes":
+		return 15 * time.Minute, nil
+	case "30m", "30min", "30minutes":
+		return 30 * time.Minute, nil
+	case "40m", "40min", "40minutes":
+		return 40 * time.Minute, nil
+	case "45m", "45min", "45minutes":
+		return 45 * time.Minute, nil
+	case "1h", "1hr", "1hour":
+		return time.Hour, nil
+	case "2h", "2hr", "2hours":
+		return 2 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unsupported duration format: %s (try formats like '5m', '10m', '1h')", durationStr)
 	}
-
-	return false, nil
 }
 
 // evaluateNumeric evaluates numeric expressions using expr-lang

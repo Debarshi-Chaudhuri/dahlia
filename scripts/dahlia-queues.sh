@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # Batch-create SQS queues with optional DLQs
 # Requires create-queue.sh in the same directory
@@ -23,6 +23,20 @@ else
   CREATE_CMD=("bash" "$CREATE_SCRIPT")
 fi
 
+# Helper function to create queue and handle QueueAlreadyExists
+create_queue_if_not_exists() {
+  local output
+  if output=$("${CREATE_CMD[@]}" "$@" 2>&1); then
+    return 0
+  elif echo "$output" | grep -q "QueueAlreadyExists"; then
+    echo "[INFO] Queue already exists, skipping..."
+    return 0
+  else
+    echo "$output" >&2
+    return 1
+  fi
+}
+
 # Define queue pairs: "<PrimaryQueue> [DLQQueue]"
 # Add your queues here
 QUEUE_LIST=(
@@ -41,10 +55,10 @@ for entry in "${QUEUE_LIST[@]}"; do
 
   if [[ -n "$DLQ" ]]; then
     echo "[INFO] Creating queue '$PRIMARY' with DLQ '$DLQ'"
-    "${CREATE_CMD[@]}" "$PRIMARY" "$DLQ"
+    create_queue_if_not_exists "$PRIMARY" "$DLQ"
   else
     echo "[INFO] Creating queue '$PRIMARY'"
-    "${CREATE_CMD[@]}" "$PRIMARY"
+    create_queue_if_not_exists "$PRIMARY"
   fi
 done
 

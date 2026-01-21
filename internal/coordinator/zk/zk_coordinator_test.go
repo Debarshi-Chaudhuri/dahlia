@@ -105,7 +105,7 @@ func TestCreateNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := coord.CreateNode(tt.path, tt.data)
+			err := coord.UpsertNode(tt.path, tt.data)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -123,7 +123,7 @@ func TestGetNode(t *testing.T) {
 	// Setup: Create a node
 	testPath := "/test/getnode"
 	testData := []byte("get test data")
-	err := coord.CreateNode(testPath, testData)
+	err := coord.UpsertNode(testPath, testData)
 	require.NoError(t, err)
 
 	// Test: Get the node
@@ -147,7 +147,7 @@ func TestUpdateNode(t *testing.T) {
 	updatedData := []byte("updated data")
 
 	// Create initial node
-	err := coord.CreateNode(testPath, initialData)
+	err := coord.UpsertNode(testPath, initialData)
 	require.NoError(t, err)
 
 	// Verify initial data
@@ -192,7 +192,7 @@ func TestWatchNode(t *testing.T) {
 	initialData := []byte("initial")
 
 	// Create node
-	err := coord.CreateNode(testPath, initialData)
+	err := coord.UpsertNode(testPath, initialData)
 	require.NoError(t, err)
 
 	// Setup watch
@@ -237,7 +237,7 @@ func TestWatchNodeMultipleUpdates(t *testing.T) {
 	defer cleanup()
 
 	testPath := "/test/watchmultiple"
-	err := coord.CreateNode(testPath, []byte("initial"))
+	err := coord.UpsertNode(testPath, []byte("initial"))
 	require.NoError(t, err)
 
 	// Track all updates
@@ -293,7 +293,7 @@ func TestWorkflowVersionTracking(t *testing.T) {
 	versionPath := fmt.Sprintf("/workflows/%s", workflowID)
 
 	// Create initial version
-	err := coord.CreateNode(versionPath, []byte("1"))
+	err := coord.UpsertNode(versionPath, []byte("1"))
 	require.NoError(t, err)
 
 	// Read version
@@ -320,7 +320,7 @@ func TestWorkflowRefreshTrigger(t *testing.T) {
 
 	// Create refresh trigger node
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	err := coord.CreateNode(refreshPath, []byte(timestamp))
+	err := coord.UpsertNode(refreshPath, []byte(timestamp))
 	require.NoError(t, err)
 
 	// Setup watch for refresh
@@ -368,7 +368,7 @@ func TestParentPathCreation(t *testing.T) {
 	testData := []byte("deep node data")
 
 	// Create deep node - should auto-create parents
-	err := coord.CreateNode(deepPath, testData)
+	err := coord.UpsertNode(deepPath, testData)
 	assert.NoError(t, err)
 
 	// Verify node exists and has correct data
@@ -396,7 +396,7 @@ func TestConcurrentOperations(t *testing.T) {
 	defer cleanup()
 
 	basePath := "/test/concurrent"
-	err := coord.CreateNode(basePath, []byte{})
+	err := coord.UpsertNode(basePath, []byte{})
 	require.NoError(t, err)
 
 	numGoroutines := 10
@@ -409,7 +409,7 @@ func TestConcurrentOperations(t *testing.T) {
 			defer wg.Done()
 			path := fmt.Sprintf("%s/node-%d", basePath, id)
 			data := []byte(fmt.Sprintf("data-%d", id))
-			err := coord.CreateNode(path, data)
+			err := coord.UpsertNode(path, data)
 			assert.NoError(t, err)
 		}(i)
 	}

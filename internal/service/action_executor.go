@@ -110,6 +110,11 @@ func (e *actionExecutor) executeDelay(ctx context.Context, action domain.Action,
 		return fmt.Errorf("workflow_id not found in context")
 	}
 
+	workflowVersion, ok := runContext["workflow_version"].(int)
+	if !ok {
+		return fmt.Errorf("workflow_version not found in context")
+	}
+
 	signalID, ok := runContext["signal_id"].(string)
 	if !ok {
 		return fmt.Errorf("signal_id not found in context")
@@ -122,10 +127,11 @@ func (e *actionExecutor) executeDelay(ctx context.Context, action domain.Action,
 
 	// Schedule job
 	jobDetails := map[string]interface{}{
-		"signal_id":   signalID,
-		"workflow_id": workflowID,
-		"run_id":      runID,
-		"resume_from": fmt.Sprintf("ACTION_%d", currentActionIndex+1),
+		"signal_id":        signalID,
+		"workflow_id":      workflowID,
+		"workflow_version": workflowVersion,
+		"run_id":           runID,
+		"resume_from":      fmt.Sprintf("ACTION_%d", currentActionIndex+1),
 	}
 
 	if delaySeconds < 60 {

@@ -4,6 +4,7 @@ package dto
 type ScheduleJobRequest struct {
 	JobType   string                 `json:"job_type" binding:"required"`
 	Payload   map[string]interface{} `json:"payload" binding:"required"`
+	QueueName string                 `json:"queue_name"`
 	ExecuteAt int64                  `json:"execute_at" binding:"required"`
 }
 

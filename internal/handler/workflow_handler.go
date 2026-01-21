@@ -39,16 +39,8 @@ func (h *WorkflowHandler) CreateWorkflowService(
 ) (dto.CreateWorkflowResponse, *error_handler.ErrorCollection) {
 	req := ioutil.Body
 
-	workflow := &domain.Workflow{
-		WorkflowID: req.WorkflowID,
-		Version:    req.Version,
-		Name:       req.Name,
-		SignalType: req.SignalType,
-		Conditions: req.Conditions,
-		Actions:    req.Actions,
-		CreatedAt:  time.Now().Unix(),
-		UpdatedAt:  time.Now().Unix(),
-	}
+	// Use domain constructor to generate UUID
+	workflow := domain.NewWorkflow(req.WorkflowID, req.Name, req.SignalType, req.Conditions, req.Actions, req.Version)
 
 	// Save to DynamoDB
 	if err := h.workflowRepo.Create(ctx, workflow); err != nil {
@@ -62,7 +54,7 @@ func (h *WorkflowHandler) CreateWorkflowService(
 
 	// Create ZK node for workflow version tracking
 	workflowPath := fmt.Sprintf("/workflows/%s", workflow.WorkflowID)
-	if err := h.zkCoord.CreateNode(workflowPath, []byte(fmt.Sprintf("%d", workflow.Version))); err != nil {
+	if err := h.zkCoord.UpsertNode(workflowPath, []byte(fmt.Sprintf("%d", workflow.Version))); err != nil {
 		h.logger.Error("failed to create ZK workflow node",
 			logger.String("workflow_id", workflow.WorkflowID),
 			logger.String("path", workflowPath),

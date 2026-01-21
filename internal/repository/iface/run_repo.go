@@ -14,7 +14,7 @@ type PaginationResult struct {
 // RunRepository defines operations for workflow runs
 type RunRepository interface {
 	Create(ctx context.Context, run *domain.WorkflowRun) error
-	Update(ctx context.Context, run *domain.WorkflowRun) error
+	Update(ctx context.Context, run *domain.WorkflowRun, expectedUpdatedAt int64) error
 	GetByID(ctx context.Context, runID string) (*domain.WorkflowRun, error)
 	GetByWorkflowID(ctx context.Context, workflowID string, limit int, nextToken string) (*PaginationResult, error)
 	GetByStatus(ctx context.Context, status domain.RunStatus, limit int, nextToken string) (*PaginationResult, error)
