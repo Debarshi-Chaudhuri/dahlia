@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// RunStatus represents the status of a workflow run
+// RunStatus represents the overall status of a workflow run (for GSI queries)
 type RunStatus string
 
 const (
@@ -23,7 +23,8 @@ type WorkflowRun struct {
 	WorkflowID         string                 `json:"workflow_id" dynamodbav:"workflow_id"`
 	WorkflowVersion    int                    `json:"workflow_version" dynamodbav:"workflow_version"`
 	SignalID           string                 `json:"signal_id" dynamodbav:"signal_id"`
-	Status             RunStatus              `json:"status" dynamodbav:"status"`
+	Status             RunStatus              `json:"status" dynamodbav:"status"`               // Overall status: TRIGGERED, COMPLETED, FAILED (for GSI)
+	CurrentState       string                 `json:"current_state" dynamodbav:"current_state"` // Detailed state: TRIGGERED, ACTION_0_STARTED, ACTION_1_COMPLETED, etc.
 	CurrentEvalIndex   int                    `json:"current_eval_index" dynamodbav:"current_eval_index"`
 	CurrentActionIndex int                    `json:"current_action_index" dynamodbav:"current_action_index"`
 	Context            map[string]interface{} `json:"context" dynamodbav:"context"`
@@ -46,7 +47,8 @@ func NewWorkflowRun(workflowID string, workflowVersion int, signalID string, con
 		WorkflowID:         workflowID,
 		WorkflowVersion:    workflowVersion,
 		SignalID:           signalID,
-		Status:             RunStatusTriggered,
+		Status:             RunStatusTriggered,         // Overall status for GSI
+		CurrentState:       string(RunStatusTriggered), // Initial detailed state
 		CurrentEvalIndex:   0,
 		CurrentActionIndex: 0,
 		Context:            context,
@@ -85,50 +87,57 @@ func (r *WorkflowRun) GetActionScheduledStatus(index int) string {
 	return fmt.Sprintf("ACTION_%d_SCHEDULED", index)
 }
 
-// SetConditionStatus updates status to specific condition index
+// SetConditionStatus updates current_state to specific condition index
 func (r *WorkflowRun) SetConditionStatus(index int) {
-	r.Status = RunStatus(r.GetConditionStatus(index))
+	r.CurrentState = r.GetConditionStatus(index)
 	r.CurrentEvalIndex = index
 	r.UpdatedAt = time.Now().UnixMilli()
+	// Status remains TRIGGERED during execution
 }
 
-// SetActionStatus updates status to specific action index
+// SetActionStatus updates current_state to specific action index
 func (r *WorkflowRun) SetActionStatus(index int) {
-	r.Status = RunStatus(r.GetActionStatus(index))
+	r.CurrentState = r.GetActionStatus(index)
 	r.CurrentActionIndex = index
 	r.UpdatedAt = time.Now().UnixMilli()
+	// Status remains TRIGGERED during execution
 }
 
-// SetActionStartedStatus updates status to action started
+// SetActionStartedStatus updates current_state to action started
 func (r *WorkflowRun) SetActionStartedStatus(index int) {
-	r.Status = RunStatus(r.GetActionStartedStatus(index))
+	r.CurrentState = r.GetActionStartedStatus(index)
 	r.CurrentActionIndex = index
 	r.UpdatedAt = time.Now().UnixMilli()
+	// Status remains TRIGGERED during execution
 }
 
-// SetActionCompletedStatus updates status to action completed
+// SetActionCompletedStatus updates current_state to action completed
 func (r *WorkflowRun) SetActionCompletedStatus(index int) {
-	r.Status = RunStatus(r.GetActionCompletedStatus(index))
+	r.CurrentState = r.GetActionCompletedStatus(index)
 	r.CurrentActionIndex = index
 	r.UpdatedAt = time.Now().UnixMilli()
+	// Status remains TRIGGERED during execution
 }
 
-// SetActionScheduledStatus updates status to specific action scheduled
+// SetActionScheduledStatus updates current_state to specific action scheduled
 func (r *WorkflowRun) SetActionScheduledStatus(index int) {
-	r.Status = RunStatus(r.GetActionScheduledStatus(index))
+	r.CurrentState = r.GetActionScheduledStatus(index)
 	r.CurrentActionIndex = index
 	r.UpdatedAt = time.Now().UnixMilli()
+	// Status remains TRIGGERED during execution
 }
 
 // MarkCompleted marks the run as completed
 func (r *WorkflowRun) MarkCompleted() {
-	r.Status = RunStatusCompleted
+	r.Status = RunStatusCompleted               // Update overall status for GSI
+	r.CurrentState = string(RunStatusCompleted) // Update detailed state
 	r.CompletedAt = time.Now().UnixMilli()
 	r.UpdatedAt = r.CompletedAt
 }
 
 // MarkFailed marks the run as failed
 func (r *WorkflowRun) MarkFailed() {
-	r.Status = RunStatusFailed
+	r.Status = RunStatusFailed               // Update overall status for GSI
+	r.CurrentState = string(RunStatusFailed) // Update detailed state
 	r.UpdatedAt = time.Now().UnixMilli()
 }

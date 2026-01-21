@@ -47,4 +47,16 @@ func InitWorkflowRoutes(
 			RequireAuth: false,
 		},
 	)
+
+	// Register list workflows route
+	routes.RegisterRoute(
+		apiV1,
+		deps,
+		routes.RouteOptions[dto.ListWorkflowsRequest, dto.ListWorkflowsResponse]{
+			Path:        "/workflows",
+			Method:      http.MethodGet,
+			ServiceFunc: workflowHandler.ListWorkflowsService,
+			RequireAuth: false,
+		},
+	)
 }

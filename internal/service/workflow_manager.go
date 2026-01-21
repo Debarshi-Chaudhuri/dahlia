@@ -68,7 +68,6 @@ func (m *workflowManager) Start(ctx context.Context) error {
 
 // Stop shuts down workflow manager
 func (m *workflowManager) Stop(ctx context.Context) error {
-	m.logger.Info("stopping workflow manager")
 	close(m.stopCh)
 	return nil
 }
@@ -120,14 +119,14 @@ func (m *workflowManager) RefreshCache(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	// Get all workflows
-	workflows, err := m.workflowRepo.List(ctx, 1000)
+	result, err := m.workflowRepo.List(ctx, 50, "")
 	if err != nil {
 		return fmt.Errorf("failed to list workflows: %w", err)
 	}
 
 	// Group by signal type
 	grouped := make(map[string][]*domain.Workflow)
-	for _, workflow := range workflows {
+	for _, workflow := range result.Workflows {
 		grouped[workflow.SignalType] = append(grouped[workflow.SignalType], workflow)
 	}
 

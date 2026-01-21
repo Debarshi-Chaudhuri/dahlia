@@ -40,3 +40,27 @@ type GetWorkflowResponse struct {
 	CreatedAt  int64              `json:"created_at"`
 	UpdatedAt  int64              `json:"updated_at"`
 }
+
+// ListWorkflowsRequest represents request to list workflows
+type ListWorkflowsRequest struct {
+	// No body fields - all params come from query string
+	// signal_type, limit, next_token
+}
+
+// ListWorkflowsResponse represents response for listing workflows
+type ListWorkflowsResponse struct {
+	Workflows []WorkflowResponse `json:"workflows"`
+	PaginationResponse
+}
+
+// WorkflowResponse represents a single workflow in list response
+type WorkflowResponse struct {
+	WorkflowID string             `json:"workflow_id"`
+	Version    int                `json:"version"`
+	Name       string             `json:"name"`
+	SignalType string             `json:"signal_type"`
+	Conditions []domain.Condition `json:"conditions"`
+	Actions    []domain.Action    `json:"actions"`
+	CreatedAt  int64              `json:"created_at"`
+	UpdatedAt  int64              `json:"updated_at"`
+}

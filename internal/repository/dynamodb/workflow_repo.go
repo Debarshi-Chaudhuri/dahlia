@@ -123,12 +123,26 @@ func (r *workflowRepository) GetBySignalType(ctx context.Context, signalType str
 	return workflows, nil
 }
 
-func (r *workflowRepository) List(ctx context.Context, limit int) ([]*domain.Workflow, error) {
-	result, err := r.client.Scan(ctx, &dynamodb.ScanInput{
+func (r *workflowRepository) List(ctx context.Context, limit int, nextToken string) (*repository.WorkflowPaginationResult, error) {
+	r.logger.Debug("listing workflows",
+		logger.Int("limit", limit))
+
+	scanInput := &dynamodb.ScanInput{
 		TableName: aws.String(r.tableName),
 		Limit:     aws.Int32(int32(limit)),
-	})
+	}
 
+	// Add pagination token if provided
+	if nextToken != "" {
+		exclusiveStartKey, err := decodeNextToken(nextToken)
+		if err != nil {
+			r.logger.Warn("failed to decode next token", logger.Error(err))
+			return nil, fmt.Errorf("invalid next token: %w", err)
+		}
+		scanInput.ExclusiveStartKey = exclusiveStartKey
+	}
+
+	result, err := r.client.Scan(ctx, scanInput)
 	if err != nil {
 		r.logger.Error("failed to list workflows", logger.Error(err))
 		return nil, fmt.Errorf("failed to list workflows: %w", err)
@@ -144,5 +158,80 @@ func (r *workflowRepository) List(ctx context.Context, limit int) ([]*domain.Wor
 		workflows = append(workflows, &workflow)
 	}
 
-	return workflows, nil
+	// Encode next token if there are more results
+	var encodedNextToken string
+	if result.LastEvaluatedKey != nil {
+		encodedNextToken, err = encodeNextToken(result.LastEvaluatedKey)
+		if err != nil {
+			r.logger.Warn("failed to encode next token", logger.Error(err))
+		}
+	}
+
+	r.logger.Debug("workflows retrieved",
+		logger.Int("count", len(workflows)))
+
+	return &repository.WorkflowPaginationResult{
+		Workflows: workflows,
+		NextToken: encodedNextToken,
+	}, nil
+}
+
+func (r *workflowRepository) ListBySignalType(ctx context.Context, signalType string, limit int, nextToken string) (*repository.WorkflowPaginationResult, error) {
+	r.logger.Debug("listing workflows by signal type",
+		logger.String("signal_type", signalType),
+		logger.Int("limit", limit))
+
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("signal_type_index"),
+		KeyConditionExpression: aws.String("signal_type = :signal_type"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":signal_type": &types.AttributeValueMemberS{Value: signalType},
+		},
+		Limit: aws.Int32(int32(limit)),
+	}
+
+	// Add pagination token if provided
+	if nextToken != "" {
+		exclusiveStartKey, err := decodeNextToken(nextToken)
+		if err != nil {
+			r.logger.Warn("failed to decode next token", logger.Error(err))
+			return nil, fmt.Errorf("invalid next token: %w", err)
+		}
+		queryInput.ExclusiveStartKey = exclusiveStartKey
+	}
+
+	result, err := r.client.Query(ctx, queryInput)
+	if err != nil {
+		r.logger.Error("failed to query workflows by signal type", logger.Error(err))
+		return nil, fmt.Errorf("failed to query workflows: %w", err)
+	}
+
+	workflows := make([]*domain.Workflow, 0, len(result.Items))
+	for _, item := range result.Items {
+		var workflow domain.Workflow
+		if err := attributevalue.UnmarshalMap(item, &workflow); err != nil {
+			r.logger.Warn("failed to unmarshal workflow", logger.Error(err))
+			continue
+		}
+		workflows = append(workflows, &workflow)
+	}
+
+	// Encode next token if there are more results
+	var encodedNextToken string
+	if result.LastEvaluatedKey != nil {
+		encodedNextToken, err = encodeNextToken(result.LastEvaluatedKey)
+		if err != nil {
+			r.logger.Warn("failed to encode next token", logger.Error(err))
+		}
+	}
+
+	r.logger.Debug("workflows by signal type retrieved",
+		logger.String("signal_type", signalType),
+		logger.Int("count", len(workflows)))
+
+	return &repository.WorkflowPaginationResult{
+		Workflows: workflows,
+		NextToken: encodedNextToken,
+	}, nil
 }

@@ -25,12 +25,12 @@ func setupTestCoordinator(t *testing.T) (*zkCoordinator, func()) {
 	require.NoError(t, err, "failed to connect to zookeeper")
 
 	// Clean up any existing test nodes from previous runs
-	testPaths := []string{
-		"/test",
-		"/workflows",
-	}
+		testPaths := []string{
+			"/test",
+			"/workflows",
+		}
 
-	for _, path := range testPaths {
+		for _, path := range testPaths {
 		deleteRecursive(coord.(*zkCoordinator), path)
 	}
 

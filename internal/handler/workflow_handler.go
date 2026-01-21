@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"dahlia/commons/error_handler"
@@ -122,5 +123,71 @@ func (h *WorkflowHandler) GetWorkflowService(
 		Actions:    workflow.Actions,
 		CreatedAt:  workflow.CreatedAt,
 		UpdatedAt:  workflow.UpdatedAt,
+	}, nil
+}
+
+func (h *WorkflowHandler) ListWorkflowsService(
+	ctx context.Context,
+	ioutil *handler.RequestIo[dto.ListWorkflowsRequest],
+) (dto.ListWorkflowsResponse, *error_handler.ErrorCollection) {
+	// Get parameters from query params
+	signalType := ioutil.QueryParams["signal_type"]
+	nextToken := ioutil.QueryParams["next_token"]
+
+	// Parse limit from query params
+	limit := 50 // default
+	if limitStr := ioutil.QueryParams["limit"]; limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+			if limit > 100 {
+				limit = 100 // max limit
+			}
+		}
+	}
+
+	h.logger.Debug("listing workflows",
+		logger.String("signal_type", signalType),
+		logger.Int("limit", limit))
+
+	var result *repositoryIface.WorkflowPaginationResult
+	var err error
+
+	// Query by signal_type if provided, otherwise list all
+	if signalType != "" {
+		result, err = h.workflowRepo.ListBySignalType(ctx, signalType, limit, nextToken)
+	} else {
+		result, err = h.workflowRepo.List(ctx, limit, nextToken)
+	}
+
+	if err != nil {
+		h.logger.Error("failed to list workflows",
+			logger.String("signal_type", signalType),
+			logger.String("error", err.Error()),
+		)
+		return dto.ListWorkflowsResponse{}, error_handler.NewErrorCollection().
+			AddError(error_handler.CodeInternalServerError, "failed to list workflows", nil)
+	}
+
+	// Convert domain workflows to response format
+	workflowResponses := make([]dto.WorkflowResponse, len(result.Workflows))
+	for i, workflow := range result.Workflows {
+		workflowResponses[i] = dto.WorkflowResponse{
+			WorkflowID: workflow.WorkflowID,
+			Version:    workflow.Version,
+			Name:       workflow.Name,
+			SignalType: workflow.SignalType,
+			Conditions: workflow.Conditions,
+			Actions:    workflow.Actions,
+			CreatedAt:  workflow.CreatedAt,
+			UpdatedAt:  workflow.UpdatedAt,
+		}
+	}
+
+	return dto.ListWorkflowsResponse{
+		Workflows: workflowResponses,
+		PaginationResponse: dto.PaginationResponse{
+			Count:     len(workflowResponses),
+			NextToken: result.NextToken,
+		},
 	}, nil
 }

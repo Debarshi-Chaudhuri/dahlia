@@ -6,7 +6,6 @@ import (
 
 	"dahlia/commons/error_handler"
 	"dahlia/commons/handler"
-	"dahlia/internal/domain"
 	"dahlia/internal/dto"
 	"dahlia/internal/logger"
 	repositoryIface "dahlia/internal/repository/iface"
@@ -54,6 +53,7 @@ func (h *RunHandler) GetRunService(
 		WorkflowVersion:    run.WorkflowVersion,
 		SignalID:           run.SignalID,
 		Status:             string(run.Status),
+		CurrentState:       run.CurrentState,
 		CurrentEvalIndex:   run.CurrentEvalIndex,
 		CurrentActionIndex: run.CurrentActionIndex,
 		Context:            run.Context,
@@ -84,18 +84,7 @@ func (h *RunHandler) ListRunsService(
 		}
 	}
 
-	var result *repositoryIface.PaginationResult
-	var err error
-
-	// Priority: workflow_id > status > default (running workflows)
-	if workflowID != "" {
-		result, err = h.runRepo.GetByWorkflowID(ctx, workflowID, limit, nextToken)
-	} else if status != "" {
-		result, err = h.runRepo.GetByStatus(ctx, domain.RunStatus(status), limit, nextToken)
-	} else {
-		// Default: show currently running workflows
-		result, err = h.runRepo.GetRunningWorkflows(ctx, limit, nextToken)
-	}
+	result, err := h.runRepo.GetRunningWorkflows(ctx, limit, nextToken)
 
 	if err != nil {
 		h.logger.Error("failed to list runs",
@@ -116,6 +105,7 @@ func (h *RunHandler) ListRunsService(
 			WorkflowVersion:    run.WorkflowVersion,
 			SignalID:           run.SignalID,
 			Status:             string(run.Status),
+			CurrentState:       run.CurrentState,
 			CurrentEvalIndex:   run.CurrentEvalIndex,
 			CurrentActionIndex: run.CurrentActionIndex,
 			Context:            run.Context,

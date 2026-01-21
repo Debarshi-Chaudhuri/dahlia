@@ -11,7 +11,8 @@ type GetRunResponse struct {
 	WorkflowID         string                 `json:"workflow_id"`
 	WorkflowVersion    int                    `json:"workflow_version"`
 	SignalID           string                 `json:"signal_id"`
-	Status             string                 `json:"status"`
+	Status             string                 `json:"status"`        // Overall status: TRIGGERED, COMPLETED, FAILED
+	CurrentState       string                 `json:"current_state"` // Detailed state: ACTION_0_STARTED, etc.
 	CurrentEvalIndex   int                    `json:"current_eval_index"`
 	CurrentActionIndex int                    `json:"current_action_index"`
 	Context            map[string]interface{} `json:"context"`
@@ -39,7 +40,8 @@ type RunResponse struct {
 	WorkflowID         string                 `json:"workflow_id"`
 	WorkflowVersion    int                    `json:"workflow_version"`
 	SignalID           string                 `json:"signal_id"`
-	Status             string                 `json:"status"`
+	Status             string                 `json:"status"`        // Overall status: TRIGGERED, COMPLETED, FAILED
+	CurrentState       string                 `json:"current_state"` // Detailed state: ACTION_0_STARTED, etc.
 	CurrentEvalIndex   int                    `json:"current_eval_index"`
 	CurrentActionIndex int                    `json:"current_action_index"`
 	Context            map[string]interface{} `json:"context"`
