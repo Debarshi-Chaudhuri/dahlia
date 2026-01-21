@@ -13,6 +13,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	awsdynamodb "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx/fxevent"
@@ -104,4 +106,23 @@ func ProvideRedisCache(log logger.Logger) (cache.Cache, error) {
 	}
 
 	return cache, nil
+}
+
+// ProvideDynamoDBClient provides DynamoDB client
+func ProvideDynamoDBClient() (*awsdynamodb.Client, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion("us-east-1"),
+		awsconfig.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:           "http://localhost:9000",
+					SigningRegion: region,
+				}, nil
+			})),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return awsdynamodb.NewFromConfig(cfg), nil
 }

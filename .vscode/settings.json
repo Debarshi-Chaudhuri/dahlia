@@ -12,6 +12,7 @@
     "editor.codeActionsOnSave": {
         "source.organizeImports": "explicit"
     },
+    "go.testTimeout": "12000s",
     "files.exclude": {
         "injestion": true,
         "scheduler": true,
