@@ -38,8 +38,13 @@ func main() {
 			// Executor Queue
 			internalConfig.ProvideExecutorQueueAndConsumer,
 
-			// HTTP
+			// HTTP Handlers
 			internalConfig.ProvideIngestionHealthHandler,
+			internalConfig.ProvideSignalHandler,
+			internalConfig.ProvideWorkflowHandler,
+			internalConfig.ProvideRunHandler,
+
+			// HTTP Config & Server
 			internalConfig.ProvideIngestionRouterConfig,
 			internalConfig.ProvideIngestionServerConfig,
 			internalConfig.ProvideIngestionRouteInitializer,

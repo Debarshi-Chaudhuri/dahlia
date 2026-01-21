@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"dahlia/commons/routes"
+	"dahlia/internal/dto"
 	"dahlia/internal/handler"
 	"dahlia/internal/logger"
 
@@ -27,7 +28,7 @@ func InitHealthRoutes(
 	routes.RegisterRoute(
 		apiV1,
 		deps,
-		routes.RouteOptions[handler.HealthRequest, handler.HealthResponse]{
+		routes.RouteOptions[dto.HealthCheckRequest, dto.HealthCheckResponse]{
 			Path:        "/health",
 			Method:      http.MethodGet,
 			ServiceFunc: healthHandler.HealthService,

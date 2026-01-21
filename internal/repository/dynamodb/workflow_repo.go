@@ -30,10 +30,6 @@ func NewWorkflowRepository(client *dynamodb.Client, log logger.Logger) repositor
 }
 
 func (r *workflowRepository) Create(ctx context.Context, workflow *domain.Workflow) error {
-	r.logger.Debug("creating workflow",
-		logger.String("workflow_id", workflow.WorkflowID),
-		logger.String("name", workflow.Name))
-
 	item, err := attributevalue.MarshalMap(workflow)
 	if err != nil {
 		r.logger.Error("failed to marshal workflow", logger.Error(err))
@@ -51,18 +47,10 @@ func (r *workflowRepository) Create(ctx context.Context, workflow *domain.Workfl
 		return fmt.Errorf("failed to create workflow: %w", err)
 	}
 
-	r.logger.Info("workflow created",
-		logger.String("workflow_id", workflow.WorkflowID),
-		logger.Int("version", workflow.Version))
-
 	return nil
 }
 
 func (r *workflowRepository) Update(ctx context.Context, workflow *domain.Workflow) error {
-	r.logger.Debug("updating workflow",
-		logger.String("workflow_id", workflow.WorkflowID),
-		logger.Int("version", workflow.Version))
-
 	item, err := attributevalue.MarshalMap(workflow)
 	if err != nil {
 		return fmt.Errorf("failed to marshal workflow: %w", err)
@@ -78,17 +66,10 @@ func (r *workflowRepository) Update(ctx context.Context, workflow *domain.Workfl
 		return fmt.Errorf("failed to update workflow: %w", err)
 	}
 
-	r.logger.Info("workflow updated",
-		logger.String("workflow_id", workflow.WorkflowID))
-
 	return nil
 }
 
 func (r *workflowRepository) GetByID(ctx context.Context, workflowID string, version int) (*domain.Workflow, error) {
-	r.logger.Debug("getting workflow by ID",
-		logger.String("workflow_id", workflowID),
-		logger.Int("version", version))
-
 	result, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.tableName),
 		Key: map[string]types.AttributeValue{
@@ -115,9 +96,6 @@ func (r *workflowRepository) GetByID(ctx context.Context, workflowID string, ver
 }
 
 func (r *workflowRepository) GetBySignalType(ctx context.Context, signalType string) ([]*domain.Workflow, error) {
-	r.logger.Debug("getting workflows by signal type",
-		logger.String("signal_type", signalType))
-
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("signal_type_index"),
@@ -142,17 +120,10 @@ func (r *workflowRepository) GetBySignalType(ctx context.Context, signalType str
 		workflows = append(workflows, &workflow)
 	}
 
-	r.logger.Debug("workflows retrieved",
-		logger.String("signal_type", signalType),
-		logger.Int("count", len(workflows)))
-
 	return workflows, nil
 }
 
 func (r *workflowRepository) List(ctx context.Context, limit int) ([]*domain.Workflow, error) {
-	r.logger.Debug("listing workflows",
-		logger.Int("limit", limit))
-
 	result, err := r.client.Scan(ctx, &dynamodb.ScanInput{
 		TableName: aws.String(r.tableName),
 		Limit:     aws.Int32(int32(limit)),
@@ -172,9 +143,6 @@ func (r *workflowRepository) List(ctx context.Context, limit int) ([]*domain.Wor
 		}
 		workflows = append(workflows, &workflow)
 	}
-
-	r.logger.Debug("workflows listed",
-		logger.Int("count", len(workflows)))
 
 	return workflows, nil
 }

@@ -2,12 +2,14 @@ package dynamodb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"dahlia/internal/domain"
 	"dahlia/internal/logger"
-	repository "dahlia/internal/repository"
+
 	repositoryIface "dahlia/internal/repository/iface"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -99,7 +101,7 @@ func (r *runRepository) Update(ctx context.Context, run *domain.WorkflowRun) err
 			r.logger.Warn("optimistic lock failed - run was modified by another process",
 				logger.String("run_id", run.RunID),
 				logger.Int("expected_updated_at", int(oldUpdatedAt)))
-			return fmt.Errorf("%w: run_id=%s", repository.ErrOptimisticLockFailed, run.RunID)
+			return fmt.Errorf("%w: run_id=%s", ErrOptimisticLockFailed, run.RunID)
 		}
 
 		r.logger.Error("failed to update run", logger.Error(err))
@@ -143,12 +145,12 @@ func (r *runRepository) GetByID(ctx context.Context, runID string) (*domain.Work
 	return &run, nil
 }
 
-func (r *runRepository) GetByWorkflowID(ctx context.Context, workflowID string, limit int) ([]*domain.WorkflowRun, error) {
+func (r *runRepository) GetByWorkflowID(ctx context.Context, workflowID string, limit int, nextToken string) (*repositoryIface.PaginationResult, error) {
 	r.logger.Debug("getting runs by workflow ID",
 		logger.String("workflow_id", workflowID),
 		logger.Int("limit", limit))
 
-	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("workflow_id_index"),
 		KeyConditionExpression: aws.String("workflow_id = :id"),
@@ -157,8 +159,19 @@ func (r *runRepository) GetByWorkflowID(ctx context.Context, workflowID string, 
 		},
 		ScanIndexForward: aws.Bool(false), // Descending order
 		Limit:            aws.Int32(int32(limit)),
-	})
+	}
 
+	// Add pagination token if provided
+	if nextToken != "" {
+		exclusiveStartKey, err := decodeNextToken(nextToken)
+		if err != nil {
+			r.logger.Warn("failed to decode next token", logger.Error(err))
+			return nil, fmt.Errorf("invalid next token: %w", err)
+		}
+		queryInput.ExclusiveStartKey = exclusiveStartKey
+	}
+
+	result, err := r.client.Query(ctx, queryInput)
 	if err != nil {
 		r.logger.Error("failed to query runs", logger.Error(err))
 		return nil, fmt.Errorf("failed to query runs: %w", err)
@@ -174,19 +187,32 @@ func (r *runRepository) GetByWorkflowID(ctx context.Context, workflowID string, 
 		runs = append(runs, &run)
 	}
 
+	// Encode next token if there are more results
+	var encodedNextToken string
+	if result.LastEvaluatedKey != nil {
+		encodedNextToken, err = encodeNextToken(result.LastEvaluatedKey)
+		if err != nil {
+			r.logger.Warn("failed to encode next token", logger.Error(err))
+		}
+	}
+
 	r.logger.Debug("runs retrieved",
 		logger.String("workflow_id", workflowID),
-		logger.Int("count", len(runs)))
+		logger.Int("count", len(runs)),
+		logger.String("has_more", fmt.Sprintf("%t", encodedNextToken != "")))
 
-	return runs, nil
+	return &repositoryIface.PaginationResult{
+		Runs:      runs,
+		NextToken: encodedNextToken,
+	}, nil
 }
 
-func (r *runRepository) GetByStatus(ctx context.Context, status domain.RunStatus, limit int) ([]*domain.WorkflowRun, error) {
+func (r *runRepository) GetByStatus(ctx context.Context, status domain.RunStatus, limit int, nextToken string) (*repositoryIface.PaginationResult, error) {
 	r.logger.Debug("getting runs by status",
 		logger.String("status", string(status)),
 		logger.Int("limit", limit))
 
-	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("status_index"),
 		KeyConditionExpression: aws.String("#status = :status"),
@@ -198,8 +224,19 @@ func (r *runRepository) GetByStatus(ctx context.Context, status domain.RunStatus
 		},
 		ScanIndexForward: aws.Bool(false),
 		Limit:            aws.Int32(int32(limit)),
-	})
+	}
 
+	// Add pagination token if provided
+	if nextToken != "" {
+		exclusiveStartKey, err := decodeNextToken(nextToken)
+		if err != nil {
+			r.logger.Warn("failed to decode next token", logger.Error(err))
+			return nil, fmt.Errorf("invalid next token: %w", err)
+		}
+		queryInput.ExclusiveStartKey = exclusiveStartKey
+	}
+
+	result, err := r.client.Query(ctx, queryInput)
 	if err != nil {
 		r.logger.Error("failed to query runs", logger.Error(err))
 		return nil, fmt.Errorf("failed to query runs: %w", err)
@@ -215,9 +252,118 @@ func (r *runRepository) GetByStatus(ctx context.Context, status domain.RunStatus
 		runs = append(runs, &run)
 	}
 
+	// Encode next token if there are more results
+	var encodedNextToken string
+	if result.LastEvaluatedKey != nil {
+		encodedNextToken, err = encodeNextToken(result.LastEvaluatedKey)
+		if err != nil {
+			r.logger.Warn("failed to encode next token", logger.Error(err))
+		}
+	}
+
 	r.logger.Debug("runs retrieved",
 		logger.String("status", string(status)),
-		logger.Int("count", len(runs)))
+		logger.Int("count", len(runs)),
+		logger.String("has_more", fmt.Sprintf("%t", encodedNextToken != "")))
 
-	return runs, nil
+	return &repositoryIface.PaginationResult{
+		Runs:      runs,
+		NextToken: encodedNextToken,
+	}, nil
+}
+
+// GetRunningWorkflows returns all runs that are not completed or failed (currently running)
+func (r *runRepository) GetRunningWorkflows(ctx context.Context, limit int, nextToken string) (*repositoryIface.PaginationResult, error) {
+	r.logger.Debug("getting running workflows",
+		logger.Int("limit", limit))
+
+	// Scan with filter expression to find runs that are not COMPLETED or FAILED
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(r.tableName),
+		FilterExpression: aws.String("#status <> :completed AND #status <> :failed"),
+		ExpressionAttributeNames: map[string]string{
+			"#status": "status",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":completed": &types.AttributeValueMemberS{Value: string(domain.RunStatusCompleted)},
+			":failed":    &types.AttributeValueMemberS{Value: string(domain.RunStatusFailed)},
+		},
+		Limit: aws.Int32(int32(limit)),
+	}
+
+	// Add pagination token if provided
+	if nextToken != "" {
+		exclusiveStartKey, err := decodeNextToken(nextToken)
+		if err != nil {
+			r.logger.Warn("failed to decode next token", logger.Error(err))
+			return nil, fmt.Errorf("invalid next token: %w", err)
+		}
+		scanInput.ExclusiveStartKey = exclusiveStartKey
+	}
+
+	result, err := r.client.Scan(ctx, scanInput)
+	if err != nil {
+		r.logger.Error("failed to scan running workflows", logger.Error(err))
+		return nil, fmt.Errorf("failed to scan running workflows: %w", err)
+	}
+
+	runs := make([]*domain.WorkflowRun, 0, len(result.Items))
+	for _, item := range result.Items {
+		var run domain.WorkflowRun
+		if err := attributevalue.UnmarshalMap(item, &run); err != nil {
+			r.logger.Warn("failed to unmarshal run", logger.Error(err))
+			continue
+		}
+		runs = append(runs, &run)
+	}
+
+	// Encode next token if there are more results
+	var encodedNextToken string
+	if result.LastEvaluatedKey != nil {
+		encodedNextToken, err = encodeNextToken(result.LastEvaluatedKey)
+		if err != nil {
+			r.logger.Warn("failed to encode next token", logger.Error(err))
+		}
+	}
+
+	r.logger.Debug("running workflows retrieved",
+		logger.Int("count", len(runs)),
+		logger.String("has_more", fmt.Sprintf("%t", encodedNextToken != "")))
+
+	return &repositoryIface.PaginationResult{
+		Runs:      runs,
+		NextToken: encodedNextToken,
+	}, nil
+}
+
+// Helper functions for pagination token encoding/decoding
+func encodeNextToken(lastEvaluatedKey map[string]types.AttributeValue) (string, error) {
+	if lastEvaluatedKey == nil {
+		return "", nil
+	}
+
+	jsonData, err := json.Marshal(lastEvaluatedKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal last evaluated key: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(jsonData), nil
+}
+
+func decodeNextToken(nextToken string) (map[string]types.AttributeValue, error) {
+	if nextToken == "" {
+		return nil, nil
+	}
+
+	jsonData, err := base64.StdEncoding.DecodeString(nextToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode next token: %w", err)
+	}
+
+	var lastEvaluatedKey map[string]types.AttributeValue
+	if err := json.Unmarshal(jsonData, &lastEvaluatedKey); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal next token: %w", err)
+	}
+
+	return lastEvaluatedKey, nil
 }

@@ -50,10 +50,6 @@ func (r *redisCache) Set(ctx context.Context, key string, value interface{}, ttl
 		return fmt.Errorf("redis set failed: %w", err)
 	}
 
-	r.logger.Debug("key set successfully",
-		logger.String("key", key),
-		logger.Any("ttl_seconds", ttl.Seconds()))
-
 	return nil
 }
 
@@ -70,7 +66,6 @@ func (r *redisCache) Get(ctx context.Context, key string) (string, error) {
 		return "", fmt.Errorf("redis get failed: %w", err)
 	}
 
-	r.logger.Debug("key retrieved successfully", logger.String("key", key))
 	return val, nil
 }
 
@@ -84,7 +79,6 @@ func (r *redisCache) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("redis delete failed: %w", err)
 	}
 
-	r.logger.Debug("key deleted successfully", logger.String("key", key))
 	return nil
 }
 
@@ -97,10 +91,6 @@ func (r *redisCache) RPush(ctx context.Context, key string, values ...interface{
 			logger.Error(err))
 		return fmt.Errorf("redis rpush failed: %w", err)
 	}
-
-	r.logger.Debug("values pushed to list",
-		logger.String("key", key),
-		logger.Int("count", len(values)))
 
 	return nil
 }
@@ -115,10 +105,6 @@ func (r *redisCache) LRange(ctx context.Context, key string, start, stop int64) 
 		return nil, fmt.Errorf("redis lrange failed: %w", err)
 	}
 
-	r.logger.Debug("list range retrieved",
-		logger.String("key", key),
-		logger.Int("count", len(vals)))
-
 	return vals, nil
 }
 
@@ -131,10 +117,6 @@ func (r *redisCache) LRem(ctx context.Context, key string, count int64, value in
 			logger.Error(err))
 		return fmt.Errorf("redis lrem failed: %w", err)
 	}
-
-	r.logger.Debug("elements removed from list",
-		logger.String("key", key),
-		logger.Int("count", int(count)))
 
 	return nil
 }
@@ -149,10 +131,6 @@ func (r *redisCache) LLen(ctx context.Context, key string) (int64, error) {
 		return 0, fmt.Errorf("redis llen failed: %w", err)
 	}
 
-	r.logger.Debug("list length retrieved",
-		logger.String("key", key),
-		logger.Int("length", int(length)))
-
 	return length, nil
 }
 
@@ -166,14 +144,10 @@ func (r *redisCache) Eval(ctx context.Context, script string, keys []string, arg
 		return nil, fmt.Errorf("redis eval failed: %w", err)
 	}
 
-	r.logger.Debug("script executed successfully",
-		logger.Int("key_count", len(keys)))
-
 	return result, nil
 }
 
 // Close closes the Redis connection
 func (r *redisCache) Close() error {
-	r.logger.Info("closing Redis connection")
 	return r.client.Close()
 }

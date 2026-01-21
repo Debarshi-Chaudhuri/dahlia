@@ -52,12 +52,6 @@ func NewWorkflowExecutor(
 // Execute executes a workflow run (new or resume)
 func (e *workflowExecutor) Execute(ctx context.Context, signalID, workflowID string, workflowVersion int, runID string, resumeFrom string) error {
 
-	e.logger.Info("executing workflow",
-		logger.String("signal_id", signalID),
-		logger.String("workflow_id", workflowID),
-		logger.Int("workflow_version", workflowVersion),
-		logger.String("resume_from", resumeFrom))
-
 	// Fetch signal
 	signal, err := e.signalRepo.GetByID(ctx, signalID)
 	if err != nil {
@@ -82,9 +76,6 @@ func (e *workflowExecutor) Execute(ctx context.Context, signalID, workflowID str
 
 // executeNewWorkflow executes a new workflow run
 func (e *workflowExecutor) executeNewWorkflow(ctx context.Context, signal *domain.Signal, workflow *domain.Workflow) error {
-	e.logger.Info("executing new workflow",
-		logger.String("signal_id", signal.SignalID),
-		logger.String("workflow_id", workflow.WorkflowID))
 
 	// Build initial context
 	initialContext := map[string]interface{}{
@@ -100,9 +91,6 @@ func (e *workflowExecutor) executeNewWorkflow(ctx context.Context, signal *domai
 		return fmt.Errorf("failed to create run: %w", err)
 	}
 
-	e.logger.Info("workflow run created",
-		logger.String("run_id", run.RunID))
-
 	// Build run context
 	runContext := e.buildRunContext(run, signal, workflow)
 
@@ -117,11 +105,6 @@ func (e *workflowExecutor) executeNewWorkflow(ctx context.Context, signal *domai
 
 // resumeWorkflow resumes a paused workflow
 func (e *workflowExecutor) resumeWorkflow(ctx context.Context, signal *domain.Signal, workflow *domain.Workflow, resumeFrom string, runID string) error {
-	e.logger.Info("resuming workflow",
-		logger.String("signal_id", signal.SignalID),
-		logger.String("workflow_id", workflow.WorkflowID),
-		logger.String("resume_from", resumeFrom))
-
 	// Parse resume_from (e.g., "ACTION_2")
 	var delayActionIndex int
 	if _, err := fmt.Sscanf(resumeFrom, "ACTION_%d", &delayActionIndex); err != nil {
@@ -140,11 +123,6 @@ func (e *workflowExecutor) resumeWorkflow(ctx context.Context, signal *domain.Si
 		return fmt.Errorf("failed to update run status: %w", err)
 	}
 
-	e.logger.Info("delay action completed, continuing workflow",
-		logger.String("run_id", run.RunID),
-		logger.Int("delay_action_index", delayActionIndex),
-		logger.String("status", string(run.Status)))
-
 	run.CurrentActionIndex = delayActionIndex
 
 	runContext := e.buildRunContext(run, signal, workflow)
@@ -155,10 +133,6 @@ func (e *workflowExecutor) resumeWorkflow(ctx context.Context, signal *domain.Si
 
 // evaluateConditions evaluates all workflow conditions
 func (e *workflowExecutor) evaluateConditions(ctx context.Context, run *domain.WorkflowRun, workflow *domain.Workflow, signal *domain.Signal) bool {
-	e.logger.Info("evaluating conditions",
-		logger.String("run_id", run.RunID),
-		logger.Int("condition_count", len(workflow.Conditions)))
-
 	for i, condition := range workflow.Conditions {
 		// Update status to CONDITION_X
 		run.SetConditionStatus(i)
@@ -177,28 +151,17 @@ func (e *workflowExecutor) evaluateConditions(ctx context.Context, run *domain.W
 		}
 
 		if !passed {
-			e.logger.Info("condition failed, workflow stops",
-				logger.String("run_id", run.RunID),
-				logger.Int("condition_index", i))
 			run.MarkCompleted()
 			e.runRepo.Update(ctx, run)
 			return false
 		}
 	}
 
-	e.logger.Info("all conditions passed",
-		logger.String("run_id", run.RunID))
-
 	return true
 }
 
 // executeActions executes workflow actions sequentially
 func (e *workflowExecutor) executeActions(ctx context.Context, run *domain.WorkflowRun, workflow *domain.Workflow, signal *domain.Signal, runContext map[string]interface{}, startIndex int) error {
-	e.logger.Info("executing actions",
-		logger.String("run_id", run.RunID),
-		logger.Int("start_index", startIndex),
-		logger.Int("total_actions", len(workflow.Actions)))
-
 	for i := startIndex; i < len(workflow.Actions); i++ {
 		action := workflow.Actions[i]
 		runContext["current_action_index"] = i
@@ -211,8 +174,6 @@ func (e *workflowExecutor) executeActions(ctx context.Context, run *domain.Workf
 
 		// If this was a delay action, pause workflow execution
 		if shouldPause {
-			e.logger.Info("workflow paused, will resume after delay",
-				logger.String("run_id", run.RunID))
 			return nil
 		}
 	}
@@ -247,10 +208,6 @@ func (e *workflowExecutor) prepareAction(ctx context.Context, run *domain.Workfl
 		return nil, fmt.Errorf("failed to update run status: %w", err)
 	}
 
-	e.logger.Debug("action started",
-		logger.Int("action_index", actionIndex),
-		logger.String("status", string(run.Status)))
-
 	// Create and save action log
 	actionLog := domain.NewActionLog(run.RunID, actionIndex, string(action.Type))
 	actionLog.MarkRunning()
@@ -264,10 +221,6 @@ func (e *workflowExecutor) prepareAction(ctx context.Context, run *domain.Workfl
 
 // executeDelayAction handles delay actions that pause workflow execution
 func (e *workflowExecutor) executeDelayAction(ctx context.Context, run *domain.WorkflowRun, action domain.Action, signal *domain.Signal, runContext map[string]interface{}, actionIndex int, actionLog *domain.ActionLog) (bool, error) {
-	e.logger.Info("delay action encountered, scheduling workflow pause",
-		logger.String("run_id", run.RunID),
-		logger.Int("action_index", actionIndex))
-
 	// Execute delay (schedules resume for later)
 	if err := e.actionExecutor.Execute(ctx, action, signal, runContext, actionIndex); err != nil {
 		e.logger.Error("delay action scheduling failed",
@@ -289,10 +242,6 @@ func (e *workflowExecutor) executeDelayAction(ctx context.Context, run *domain.W
 		e.logger.Error("failed to update action log", logger.Error(err))
 		return false, fmt.Errorf("failed to update action log: %w", err)
 	}
-
-	e.logger.Info("workflow paused, scheduled to resume after delay",
-		logger.String("run_id", run.RunID),
-		logger.String("status", string(run.Status)))
 
 	return true, nil // shouldPause = true
 }
@@ -325,11 +274,6 @@ func (e *workflowExecutor) executeRegularAction(ctx context.Context, run *domain
 		e.logger.Error("failed to update action log", logger.Error(err))
 	}
 
-	e.logger.Info("action completed",
-		logger.Int("action_index", actionIndex),
-		logger.String("status", string(run.Status)),
-		logger.Int("duration_ms", int(duration.Milliseconds())))
-
 	return nil
 }
 
@@ -355,9 +299,6 @@ func (e *workflowExecutor) completeWorkflow(ctx context.Context, run *domain.Wor
 		e.logger.Error("failed to mark run as completed", logger.Error(err))
 		return fmt.Errorf("failed to mark run as completed: %w", err)
 	}
-
-	e.logger.Info("workflow execution completed",
-		logger.String("run_id", run.RunID))
 
 	return nil
 }

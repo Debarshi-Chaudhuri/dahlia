@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"dahlia/commons/routes"
+	"dahlia/internal/dto"
 	"dahlia/internal/handler"
 	"dahlia/internal/logger"
 
@@ -27,22 +28,10 @@ func InitSchedulerRoutes(
 	routes.RegisterRoute(
 		apiV1,
 		deps,
-		routes.RouteOptions[handler.ScheduleRequest, handler.ScheduleResponse]{
+		routes.RouteOptions[dto.ScheduleJobRequest, dto.ScheduleJobResponse]{
 			Path:        "/schedule",
 			Method:      http.MethodPost,
 			ServiceFunc: schedulerHandler.ScheduleService,
-			RequireAuth: false,
-		},
-	)
-
-	// GET /api/v1/jobs/:job_id - Get job status
-	routes.RegisterRoute(
-		apiV1,
-		deps,
-		routes.RouteOptions[struct{}, handler.JobStatusResponse]{
-			Path:        "/jobs/:job_id",
-			Method:      http.MethodGet,
-			ServiceFunc: schedulerHandler.GetJobStatusService,
 			RequireAuth: false,
 		},
 	)

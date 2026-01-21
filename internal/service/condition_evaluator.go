@@ -33,10 +33,6 @@ func NewConditionEvaluator(signalRepo repository.SignalRepository, log logger.Lo
 
 // EvaluateAll evaluates all conditions (AND logic)
 func (e *conditionEvaluator) EvaluateAll(ctx context.Context, conditions []domain.Condition, signal *domain.Signal) (bool, error) {
-	e.logger.Debug("evaluating all conditions",
-		logger.String("signal_id", signal.SignalID),
-		logger.Int("condition_count", len(conditions)))
-
 	for i, condition := range conditions {
 		passed, err := e.Evaluate(ctx, condition, signal)
 		if err != nil {
@@ -47,9 +43,6 @@ func (e *conditionEvaluator) EvaluateAll(ctx context.Context, conditions []domai
 		}
 
 		if !passed {
-			e.logger.Info("condition failed",
-				logger.Int("condition_index", i),
-				logger.String("type", string(condition.Type)))
 			return false, nil
 		}
 
@@ -57,9 +50,6 @@ func (e *conditionEvaluator) EvaluateAll(ctx context.Context, conditions []domai
 			logger.Int("condition_index", i),
 			logger.String("type", string(condition.Type)))
 	}
-
-	e.logger.Info("all conditions passed",
-		logger.String("signal_id", signal.SignalID))
 
 	return true, nil
 }
@@ -78,11 +68,6 @@ func (e *conditionEvaluator) Evaluate(ctx context.Context, condition domain.Cond
 
 // evaluateAbsence checks if no signal arrived within duration
 func (e *conditionEvaluator) evaluateAbsence(ctx context.Context, condition domain.Condition, signal *domain.Signal) (bool, error) {
-	e.logger.Debug("evaluating absence condition",
-		logger.String("signal_type", signal.SignalType),
-		logger.String("org_id", signal.OrgID),
-		logger.String("duration", condition.Duration))
-
 	// Parse duration
 	duration, err := time.ParseDuration(condition.Duration)
 	if err != nil {
@@ -97,10 +82,6 @@ func (e *conditionEvaluator) evaluateAbsence(ctx context.Context, condition doma
 
 	expectedTime := signalTime.Add(-duration)
 
-	e.logger.Debug("checking for signal absence",
-		logger.String("expected_time", expectedTime.Format(time.RFC3339)),
-		logger.String("signal_time", signal.Timestamp))
-
 	// Query for last signal before current signal
 	lastSignal, err := e.signalRepo.GetLastSignal(ctx, signal.SignalType, signal.OrgID, signalTime)
 	if err != nil {
@@ -109,9 +90,6 @@ func (e *conditionEvaluator) evaluateAbsence(ctx context.Context, condition doma
 
 	// If no signal found, absence condition is met
 	if lastSignal == nil {
-		e.logger.Info("absence condition met - no previous signal found",
-			logger.String("signal_type", signal.SignalType),
-			logger.String("org_id", signal.OrgID))
 		return true, nil
 	}
 
@@ -123,32 +101,17 @@ func (e *conditionEvaluator) evaluateAbsence(ctx context.Context, condition doma
 
 	// Check if last signal is before expected time
 	if lastSignalTime.Before(expectedTime) {
-		e.logger.Info("absence condition met",
-			logger.String("last_signal_time", lastSignal.Timestamp),
-			logger.String("expected_time", expectedTime.Format(time.RFC3339)))
 		return true, nil
 	}
-
-	e.logger.Debug("absence condition not met",
-		logger.String("last_signal_time", lastSignal.Timestamp),
-		logger.String("expected_time", expectedTime.Format(time.RFC3339)))
 
 	return false, nil
 }
 
 // evaluateNumeric evaluates numeric expressions using expr-lang
 func (e *conditionEvaluator) evaluateNumeric(_ context.Context, condition domain.Condition, signal *domain.Signal) (bool, error) {
-	e.logger.Debug("evaluating numeric condition",
-		logger.String("field", condition.Field),
-		logger.String("operator", condition.Operator),
-		logger.Any("value", condition.Value))
-
 	// Build expression: field operator value
 	// Example: "value.status > 10" or "metadata.count == 5"
 	expression := fmt.Sprintf("%s %s %v", condition.Field, condition.Operator, condition.Value)
-
-	e.logger.Debug("evaluating expression",
-		logger.String("expression", expression))
 
 	// Build environment with signal data
 	env := e.buildEnvironment(signal)
@@ -175,10 +138,6 @@ func (e *conditionEvaluator) evaluateNumeric(_ context.Context, condition domain
 	if !ok {
 		return false, fmt.Errorf("expression did not return boolean: %T", result)
 	}
-
-	e.logger.Debug("numeric condition evaluated",
-		logger.String("expression", expression),
-		logger.Any("result", boolResult))
 
 	return boolResult, nil
 }

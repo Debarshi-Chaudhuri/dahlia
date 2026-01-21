@@ -50,8 +50,6 @@ func NewWorkflowManager(
 
 // Start initializes cache and sets up ZK watchers
 func (m *workflowManager) Start(ctx context.Context) error {
-	m.logger.Info("starting workflow manager")
-
 	// Initial cache load
 	if err := m.RefreshCache(ctx); err != nil {
 		return fmt.Errorf("failed initial cache load: %w", err)
@@ -65,7 +63,6 @@ func (m *workflowManager) Start(ctx context.Context) error {
 		// Non-fatal - continue without watch
 	}
 
-	m.logger.Info("workflow manager started")
 	return nil
 }
 
@@ -83,26 +80,16 @@ func (m *workflowManager) GetWorkflowsBySignalType(ctx context.Context, signalTy
 
 	cacheKey := m.getCacheKey(signalType)
 
-	m.logger.Debug("getting workflows from cache",
-		logger.String("signal_type", signalType),
-		logger.String("cache_key", cacheKey))
-
 	// Try cache first
 	cached, err := m.cache.Get(ctx, cacheKey)
 	if err == nil {
 		var workflows []*domain.Workflow
 		if err := json.Unmarshal([]byte(cached), &workflows); err == nil {
-			m.logger.Debug("cache hit",
-				logger.String("signal_type", signalType),
-				logger.Int("workflow_count", len(workflows)))
 			return workflows, nil
 		}
 	}
 
 	// Cache miss - query repository
-	m.logger.Debug("cache miss, querying repository",
-		logger.String("signal_type", signalType))
-
 	workflows, err := m.workflowRepo.GetBySignalType(ctx, signalType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get workflows: %w", err)
@@ -119,10 +106,6 @@ func (m *workflowManager) GetWorkflow(ctx context.Context, workflowID string, ve
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	m.logger.Debug("getting workflow",
-		logger.String("workflow_id", workflowID),
-		logger.Int("version", version))
-
 	workflow, err := m.workflowRepo.GetByID(ctx, workflowID, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get workflow: %w", err)
@@ -135,8 +118,6 @@ func (m *workflowManager) GetWorkflow(ctx context.Context, workflowID string, ve
 func (m *workflowManager) RefreshCache(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	m.logger.Info("refreshing workflow cache")
 
 	// Get all workflows
 	workflows, err := m.workflowRepo.List(ctx, 1000)
@@ -155,18 +136,11 @@ func (m *workflowManager) RefreshCache(ctx context.Context) error {
 		m.cacheWorkflows(ctx, signalType, workflows)
 	}
 
-	m.logger.Info("workflow cache refreshed",
-		logger.Int("signal_types", len(grouped)),
-		logger.Int("total_workflows", len(workflows)))
-
 	return nil
 }
 
 // handleRefreshTrigger handles ZK refresh notifications
 func (m *workflowManager) handleRefreshTrigger(data []byte) {
-	m.logger.Info("refresh trigger received from ZK",
-		logger.String("data", string(data)))
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -195,10 +169,6 @@ func (m *workflowManager) cacheWorkflows(ctx context.Context, signalType string,
 			logger.Error(err))
 		return
 	}
-
-	m.logger.Debug("workflows cached",
-		logger.String("signal_type", signalType),
-		logger.Int("count", len(workflows)))
 }
 
 // getCacheKey generates cache key for signal type

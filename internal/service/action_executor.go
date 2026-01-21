@@ -37,10 +37,6 @@ func NewActionExecutor(slackClient slack.Client, scheduler IScheduler, log logge
 
 // Execute executes a single action
 func (e *actionExecutor) Execute(ctx context.Context, action domain.Action, signal *domain.Signal, runContext map[string]interface{}, actionIndex int) error {
-	e.logger.Info("executing action",
-		logger.String("action_type", string(action.Type)),
-		logger.Int("action_index", actionIndex))
-
 	switch action.Type {
 	case domain.ActionTypeSlack:
 		return e.executeSlack(ctx, action, signal, runContext)
@@ -60,10 +56,6 @@ func (e *actionExecutor) executeSlack(ctx context.Context, action domain.Action,
 	// Replace template variables in message
 	message := e.replaceTemplateVariables(action.Message, signal, runContext)
 
-	e.logger.Info("sending slack message",
-		logger.String("channel", action.Target),
-		logger.String("message", message))
-
 	err := e.slackClient.SendMessage(ctx, action.Target, message)
 	if err != nil {
 		e.logger.Error("failed to send slack message",
@@ -82,24 +74,14 @@ func (e *actionExecutor) executeSlack(ctx context.Context, action domain.Action,
 
 // executeWebhook sends a webhook request
 func (e *actionExecutor) executeWebhook(ctx context.Context, action domain.Action, signal *domain.Signal, runContext map[string]interface{}) error {
-	startTime := time.Now()
 
 	// Replace template variables in message
 	message := e.replaceTemplateVariables(action.Message, signal, runContext)
-
-	e.logger.Info("executing webhook",
-		logger.String("url", action.Target),
-		logger.String("message", message))
 
 	// Mock webhook - just log
 	e.logger.Info("MOCK: Webhook called",
 		logger.String("url", action.Target),
 		logger.String("payload", message))
-
-	duration := time.Since(startTime)
-	e.logger.Info("webhook executed",
-		logger.String("url", action.Target),
-		logger.Int("duration_ms", int(duration.Milliseconds())))
 
 	return nil
 }
@@ -148,8 +130,6 @@ func (e *actionExecutor) executeDelay(ctx context.Context, action domain.Action,
 
 	if delaySeconds < 60 {
 		// Handle short delays inside service
-		e.logger.Info("handling short delay with goroutine",
-			logger.Int("delay_seconds", delaySeconds))
 
 		time.Sleep(time.Duration(delaySeconds) * time.Second)
 

@@ -31,10 +31,6 @@ func NewSignalRepository(client *dynamodb.Client, log logger.Logger) repository.
 }
 
 func (r *signalRepository) Create(ctx context.Context, signal *domain.Signal) error {
-	r.logger.Debug("creating signal",
-		logger.String("signal_id", signal.SignalID),
-		logger.String("signal_type", signal.SignalType))
-
 	item, err := attributevalue.MarshalMap(signal)
 	if err != nil {
 		r.logger.Error("failed to marshal signal", logger.Error(err))
@@ -59,16 +55,10 @@ func (r *signalRepository) Create(ctx context.Context, signal *domain.Signal) er
 		return fmt.Errorf("failed to create signal: %w", err)
 	}
 
-	r.logger.Info("signal created",
-		logger.String("signal_id", signal.SignalID))
-
 	return nil
 }
 
 func (r *signalRepository) GetByID(ctx context.Context, signalID string) (*domain.Signal, error) {
-	r.logger.Debug("getting signal by ID",
-		logger.String("signal_id", signalID))
-
 	result, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.tableName),
 		Key: map[string]types.AttributeValue{
@@ -94,11 +84,6 @@ func (r *signalRepository) GetByID(ctx context.Context, signalID string) (*domai
 }
 
 func (r *signalRepository) GetLastSignal(ctx context.Context, signalType, orgID string, before time.Time) (*domain.Signal, error) {
-	r.logger.Debug("getting last signal",
-		logger.String("signal_type", signalType),
-		logger.String("org_id", orgID),
-		logger.String("before", before.Format(time.RFC3339)))
-
 	// Query GSI-1: signal_type#org_id
 	compositeKey := signalType + "#" + orgID
 	beforeTimestamp := before.Format(time.RFC3339)
@@ -136,11 +121,6 @@ func (r *signalRepository) GetLastSignal(ctx context.Context, signalType, orgID 
 }
 
 func (r *signalRepository) QueryBySignalType(ctx context.Context, signalType string, startTime, endTime time.Time) ([]*domain.Signal, error) {
-	r.logger.Debug("querying signals by type",
-		logger.String("signal_type", signalType),
-		logger.String("start_time", startTime.Format(time.RFC3339)),
-		logger.String("end_time", endTime.Format(time.RFC3339)))
-
 	startTimestamp := startTime.Format(time.RFC3339)
 	endTimestamp := endTime.Format(time.RFC3339)
 
@@ -172,10 +152,6 @@ func (r *signalRepository) QueryBySignalType(ctx context.Context, signalType str
 		}
 		signals = append(signals, &signal)
 	}
-
-	r.logger.Debug("signals queried",
-		logger.String("signal_type", signalType),
-		logger.Int("count", len(signals)))
 
 	return signals, nil
 }

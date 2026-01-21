@@ -30,10 +30,6 @@ func NewActionLogRepository(client *dynamodb.Client, log logger.Logger) reposito
 }
 
 func (r *actionLogRepository) Create(ctx context.Context, log *domain.ActionLog) error {
-	r.logger.Debug("creating action log",
-		logger.String("run_id", log.RunID),
-		logger.Int("action_index", log.ActionIndex))
-
 	item, err := attributevalue.MarshalMap(log)
 	if err != nil {
 		r.logger.Error("failed to marshal action log", logger.Error(err))
@@ -50,17 +46,10 @@ func (r *actionLogRepository) Create(ctx context.Context, log *domain.ActionLog)
 		return fmt.Errorf("failed to create action log: %w", err)
 	}
 
-	r.logger.Debug("action log created",
-		logger.String("log_id", log.LogID))
-
 	return nil
 }
 
 func (r *actionLogRepository) Update(ctx context.Context, log *domain.ActionLog) error {
-	r.logger.Debug("updating action log",
-		logger.String("log_id", log.LogID),
-		logger.String("status", string(log.Status)))
-
 	item, err := attributevalue.MarshalMap(log)
 	if err != nil {
 		return fmt.Errorf("failed to marshal action log: %w", err)
@@ -76,16 +65,10 @@ func (r *actionLogRepository) Update(ctx context.Context, log *domain.ActionLog)
 		return fmt.Errorf("failed to update action log: %w", err)
 	}
 
-	r.logger.Debug("action log updated",
-		logger.String("log_id", log.LogID))
-
 	return nil
 }
 
 func (r *actionLogRepository) GetByRunID(ctx context.Context, runID string) ([]*domain.ActionLog, error) {
-	r.logger.Debug("getting action logs by run ID",
-		logger.String("run_id", runID))
-
 	// Query by run_id prefix since PK is run_id#action_index
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
@@ -110,18 +93,10 @@ func (r *actionLogRepository) GetByRunID(ctx context.Context, runID string) ([]*
 		logs = append(logs, &log)
 	}
 
-	r.logger.Debug("action logs retrieved",
-		logger.String("run_id", runID),
-		logger.Int("count", len(logs)))
-
 	return logs, nil
 }
 
 func (r *actionLogRepository) GetByRunIDAndAction(ctx context.Context, runID string, actionIndex int) (*domain.ActionLog, error) {
-	r.logger.Debug("getting action log by run ID and action",
-		logger.String("run_id", runID),
-		logger.Int("action_index", actionIndex))
-
 	compositeKey := fmt.Sprintf("%s#%d", runID, actionIndex)
 
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{

@@ -30,9 +30,6 @@ func NewJobRepository(client *dynamodb.Client, log logger.Logger) repository.Job
 }
 
 func (r *jobRepository) Create(ctx context.Context, job *domain.ScheduledJob) error {
-	r.logger.Debug("creating scheduled job",
-		logger.String("job_id", job.JobID))
-
 	item, err := attributevalue.MarshalMap(job)
 	if err != nil {
 		r.logger.Error("failed to marshal job", logger.Error(err))
@@ -49,17 +46,10 @@ func (r *jobRepository) Create(ctx context.Context, job *domain.ScheduledJob) er
 		return fmt.Errorf("failed to create job: %w", err)
 	}
 
-	r.logger.Info("scheduled job created",
-		logger.String("job_id", job.JobID))
-
 	return nil
 }
 
 func (r *jobRepository) Update(ctx context.Context, job *domain.ScheduledJob) error {
-	r.logger.Debug("updating scheduled job",
-		logger.String("job_id", job.JobID),
-		logger.String("status", string(job.Status)))
-
 	item, err := attributevalue.MarshalMap(job)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job: %w", err)
@@ -75,16 +65,10 @@ func (r *jobRepository) Update(ctx context.Context, job *domain.ScheduledJob) er
 		return fmt.Errorf("failed to update job: %w", err)
 	}
 
-	r.logger.Debug("scheduled job updated",
-		logger.String("job_id", job.JobID))
-
 	return nil
 }
 
 func (r *jobRepository) GetByID(ctx context.Context, jobID string) (*domain.ScheduledJob, error) {
-	r.logger.Debug("getting job by ID",
-		logger.String("job_id", jobID))
-
 	result, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.tableName),
 		Key: map[string]types.AttributeValue{
@@ -111,10 +95,6 @@ func (r *jobRepository) GetByID(ctx context.Context, jobID string) (*domain.Sche
 }
 
 func (r *jobRepository) GetByStatus(ctx context.Context, status domain.JobStatus, limit int) ([]*domain.ScheduledJob, error) {
-	r.logger.Debug("querying jobs by status",
-		logger.String("status", string(status)),
-		logger.Int("limit", limit))
-
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("status_index"),
@@ -142,10 +122,6 @@ func (r *jobRepository) GetByStatus(ctx context.Context, status domain.JobStatus
 		}
 		jobs = append(jobs, &job)
 	}
-
-	r.logger.Debug("jobs retrieved",
-		logger.String("status", string(status)),
-		logger.Int("count", len(jobs)))
 
 	return jobs, nil
 }

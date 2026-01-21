@@ -109,6 +109,7 @@ type ExecutorQueueResult struct {
 func ProvideExecutorQueueAndConsumer(
 	sqsClient *awssqs.Client,
 	workflowExec service.WorkflowExecutor,
+	signalRepo repository.SignalRepository,
 	log logger.Logger,
 ) ExecutorQueueResult {
 	// Use a placeholder consumer function that will be set after creation
@@ -129,8 +130,8 @@ func ProvideExecutorQueueAndConsumer(
 		log,
 	)
 
-	// Create the consumer with the queue
-	consumer = executorImpl.NewExecutorConsumer(log, q, workflowExec)
+	// Create the consumer with the queue and signal repository
+	consumer = executorImpl.NewExecutorConsumer(log, q, workflowExec, signalRepo)
 
 	return ExecutorQueueResult{
 		Queue:    q,
@@ -142,6 +143,30 @@ func ProvideExecutorQueueAndConsumer(
 
 func ProvideIngestionHealthHandler(log logger.Logger) *handler.HealthHandler {
 	return handler.NewHealthHandler(log, "ingestion")
+}
+
+func ProvideSignalHandler(
+	log logger.Logger,
+	signalRepo repository.SignalRepository,
+	workflowMgr service.WorkflowManager,
+	executorConsumer executor.ExecutorConsumer,
+) *handler.SignalHandler {
+	return handler.NewSignalHandler(log, signalRepo, workflowMgr, executorConsumer)
+}
+
+func ProvideWorkflowHandler(
+	log logger.Logger,
+	workflowRepo repository.WorkflowRepository,
+	zkCoord coordinator.Coordinator,
+) *handler.WorkflowHandler {
+	return handler.NewWorkflowHandler(log, workflowRepo, zkCoord)
+}
+
+func ProvideRunHandler(
+	log logger.Logger,
+	runRepo repository.RunRepository,
+) *handler.RunHandler {
+	return handler.NewRunHandler(log, runRepo)
 }
 
 func ProvideIngestionRouterConfig(log logger.Logger) routes.RouterConfig {
@@ -157,9 +182,17 @@ func ProvideIngestionServerConfig() server.ServerConfig {
 	}
 }
 
-func ProvideIngestionRouteInitializer(healthHandler *handler.HealthHandler) func(*gin.Engine, routes.RouteDependencies) {
+func ProvideIngestionRouteInitializer(
+	healthHandler *handler.HealthHandler,
+	signalHandler *handler.SignalHandler,
+	workflowHandler *handler.WorkflowHandler,
+	runHandler *handler.RunHandler,
+) func(*gin.Engine, routes.RouteDependencies) {
 	return func(router *gin.Engine, deps routes.RouteDependencies) {
 		internalRoutes.InitHealthRoutes(router, healthHandler, deps.Logger)
+		internalRoutes.InitSignalRoutes(router, signalHandler, deps.Logger)
+		internalRoutes.InitWorkflowRoutes(router, workflowHandler, deps.Logger)
+		internalRoutes.InitRunRoutes(router, runHandler, deps.Logger)
 	}
 }
 

@@ -5,19 +5,13 @@ import (
 
 	"dahlia/commons/error_handler"
 	"dahlia/commons/handler"
+	"dahlia/internal/dto"
 	"dahlia/internal/logger"
 )
 
 type HealthHandler struct {
 	logger      logger.Logger
 	serviceName string
-}
-
-type HealthRequest struct{}
-
-type HealthResponse struct {
-	Status  string `json:"status"`
-	Service string `json:"service"`
 }
 
 func NewHealthHandler(log logger.Logger, serviceName string) *HealthHandler {
@@ -29,11 +23,11 @@ func NewHealthHandler(log logger.Logger, serviceName string) *HealthHandler {
 
 func (h *HealthHandler) HealthService(
 	ctx context.Context,
-	ioutil *handler.RequestIo[HealthRequest],
-) (HealthResponse, *error_handler.ErrorCollection) {
+	ioutil *handler.RequestIo[dto.HealthCheckRequest],
+) (dto.HealthCheckResponse, *error_handler.ErrorCollection) {
 	h.logger.Debug("health check requested")
 
-	response := HealthResponse{
+	response := dto.HealthCheckResponse{
 		Status:  "healthy",
 		Service: h.serviceName,
 	}

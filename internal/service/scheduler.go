@@ -64,9 +64,6 @@ func NewScheduler(
 
 // Start begins the scheduler cron jobs
 func (s *Scheduler) Start(ctx context.Context) error {
-	s.logger.Info("starting scheduler service",
-		logger.String("node_id", s.nodeID))
-
 	// Main cron: Every minute at :00 seconds
 	_, err := s.cron.AddFunc("0 * * * * *", func() {
 		s.processCurrentMinuteBucket(context.Background())
@@ -92,28 +89,20 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	}
 
 	s.cron.Start()
-	s.logger.Info("scheduler cron jobs started")
 
 	return nil
 }
 
 // Stop stops the scheduler
 func (s *Scheduler) Stop(ctx context.Context) error {
-	s.logger.Info("stopping scheduler service")
 	close(s.stopCh)
 	cronCtx := s.cron.Stop()
 	<-cronCtx.Done()
-	s.logger.Info("scheduler stopped")
 	return nil
 }
 
 // ScheduleJob schedules a job for delayed execution
 func (s *Scheduler) ScheduleJob(ctx context.Context, job *domain.ScheduledJob) error {
-	s.logger.Info("scheduling job",
-		logger.String("job_id", job.JobID),
-		logger.String("job_name", job.JobName),
-		logger.Int("execute_at", int(job.ExecuteAt)))
-
 	executeTime := time.UnixMilli(job.ExecuteAt)
 	currentTime := time.Now()
 
@@ -149,10 +138,6 @@ func (s *Scheduler) ScheduleJob(ctx context.Context, job *domain.ScheduledJob) e
 		return fmt.Errorf("failed to add job to bucket: %w", err)
 	}
 
-	s.logger.Info("job scheduled successfully",
-		logger.String("job_id", job.JobID),
-		logger.String("bucket_key", bucketKey))
-
 	return nil
 }
 
@@ -175,10 +160,6 @@ func (s *Scheduler) processCurrentMinuteBucket(ctx context.Context) {
 	bucketKey := s.getBucketKey(currentTime)
 	tempKey := s.getTempKey(currentTime)
 
-	s.logger.Info("processing minute bucket",
-		logger.String("bucket_key", bucketKey),
-		logger.String("time", currentTime.Format("2006-01-02 15:04:05")))
-
 	// Check if bucket has jobs
 	length, err := s.cache.LLen(ctx, bucketKey)
 	if err != nil {
@@ -187,7 +168,6 @@ func (s *Scheduler) processCurrentMinuteBucket(ctx context.Context) {
 	}
 
 	if length == 0 {
-		s.logger.Debug("bucket is empty, skipping")
 		return
 	}
 
@@ -199,10 +179,6 @@ func (s *Scheduler) processCurrentMinuteBucket(ctx context.Context) {
 	}
 
 	jobIDs := s.extractJobIDs(result)
-	s.logger.Info("transferred jobs to TEMP bucket",
-		logger.String("temp_key", tempKey),
-		logger.Int("job_count", len(jobIDs)))
-
 	// Process each job
 	for _, jobID := range jobIDs {
 		s.processJob(ctx, jobID, tempKey)
@@ -211,9 +187,6 @@ func (s *Scheduler) processCurrentMinuteBucket(ctx context.Context) {
 
 // processJob processes a single job
 func (s *Scheduler) processJob(ctx context.Context, jobID, tempKey string) {
-	s.logger.Info("processing job",
-		logger.String("job_id", jobID))
-
 	// Fetch job from DynamoDB
 	job, err := s.jobRepo.GetByID(ctx, jobID)
 	if err != nil {
@@ -257,8 +230,6 @@ func (s *Scheduler) processJob(ctx context.Context, jobID, tempKey string) {
 			logger.Error(err))
 	}
 
-	s.logger.Info("job processed successfully",
-		logger.String("job_id", jobID))
 }
 
 // processLateArrivals checks for jobs added to the previous minute's bucket after initial processing
@@ -267,10 +238,6 @@ func (s *Scheduler) processLateArrivals(ctx context.Context) {
 	previousMinute := time.Now().Add(-1 * time.Minute).Truncate(time.Minute)
 	bucketKey := s.getBucketKey(previousMinute)
 	tempKey := s.getTempKey(previousMinute)
-
-	s.logger.Debug("checking for late arrivals",
-		logger.String("bucket_key", bucketKey),
-		logger.String("time", previousMinute.Format("2006-01-02 15:04:05")))
 
 	// Check if there are any jobs in the bucket (late arrivals)
 	length, err := s.cache.LLen(ctx, bucketKey)
@@ -283,10 +250,6 @@ func (s *Scheduler) processLateArrivals(ctx context.Context) {
 		return // No late arrivals
 	}
 
-	s.logger.Info("found late arrival jobs",
-		logger.String("bucket_key", bucketKey),
-		logger.Int("count", int(length)))
-
 	// Atomic transfer late arrivals to TEMP bucket
 	result, err := s.cache.Eval(ctx, luaAtomicTransfer, []string{bucketKey, tempKey})
 	if err != nil {
@@ -295,10 +258,6 @@ func (s *Scheduler) processLateArrivals(ctx context.Context) {
 	}
 
 	jobIDs := s.extractJobIDs(result)
-	s.logger.Info("processing late arrivals",
-		logger.String("bucket_key", bucketKey),
-		logger.Int("job_count", len(jobIDs)))
-
 	// Process each late arrival job
 	for _, jobID := range jobIDs {
 		s.processJob(ctx, jobID, tempKey)
@@ -310,9 +269,6 @@ func (s *Scheduler) cleanupMissedJobs(ctx context.Context) {
 	fiveMinutesAgo := time.Now().Add(-5 * time.Minute).Truncate(time.Minute)
 	tempKey := s.getTempKey(fiveMinutesAgo)
 
-	s.logger.Debug("checking for missed jobs",
-		logger.String("temp_key", tempKey))
-
 	length, err := s.cache.LLen(ctx, tempKey)
 	if err != nil {
 		s.logger.Error("failed to get TEMP bucket length", logger.Error(err))
@@ -322,10 +278,6 @@ func (s *Scheduler) cleanupMissedJobs(ctx context.Context) {
 	if length == 0 {
 		return
 	}
-
-	s.logger.Warn("found missed jobs in TEMP bucket",
-		logger.String("temp_key", tempKey),
-		logger.Int("count", int(length)))
 
 	jobIDs, err := s.cache.LRange(ctx, tempKey, 0, -1)
 	if err != nil {
@@ -357,19 +309,11 @@ func (s *Scheduler) sendToQueue(ctx context.Context, job *domain.ScheduledJob) e
 		return fmt.Errorf("failed to send message to SQS: %w", err)
 	}
 
-	s.logger.Debug("message sent to queue",
-		logger.String("queue_name", job.QueueName),
-		logger.String("job_id", job.JobID))
-
 	return nil
 }
 
 // executeJobDirectly executes a job without going through scheduler (for short delays)
 func (s *Scheduler) executeJobDirectly(ctx context.Context, jobName, queueName string, jobDetails map[string]interface{}) {
-	s.logger.Info("executing job directly",
-		logger.String("job_name", jobName),
-		logger.String("queue_name", queueName))
-
 	queueURL := fmt.Sprintf("http://localhost:4566/000000000000/%s", queueName)
 
 	messageBody, err := json.Marshal(jobDetails)
@@ -388,9 +332,6 @@ func (s *Scheduler) executeJobDirectly(ctx context.Context, jobName, queueName s
 		s.logger.Error("failed to send message to SQS", logger.Error(err))
 		return
 	}
-
-	s.logger.Info("job executed directly",
-		logger.String("job_name", jobName))
 }
 
 // getBucketKey generates Redis key for a given time
