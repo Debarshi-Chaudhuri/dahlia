@@ -9,7 +9,8 @@ type ExecutorMessage struct {
 	SignalID        string `json:"signal_id"`
 	WorkflowID      string `json:"workflow_id"`
 	WorkflowVersion int    `json:"workflow_version"`
-	ResumeFrom      string `json:"resume_from,omitempty"` // e.g., "ACTION_2"
+	RunID           string `json:"run_id"` // ADD THIS
+	ResumeFrom      string `json:"resume_from,omitempty"`
 }
 
 // ExecutorConsumer defines the interface for processing executor queue messages

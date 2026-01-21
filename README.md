@@ -314,3 +314,30 @@ ZK_SERVERS=localhost:2181
 - [ ] Scheduler with Redis buckets
 - [ ] ZooKeeper coordination
 - [ ] API endpoints implementation
+
+## Recommended Order
+
+**Phase 1: Foundation (Data Layer)**
+1. Domain models (Signal, Workflow, WorkflowRun, Action)
+2. Repository interfaces
+3. DynamoDB implementations
+
+**Phase 2: Core Services**
+4. ConditionEvaluator (simple, no dependencies)
+5. ActionExecutor (needs slack client only)
+6. WorkflowManager (needs WorkflowRepo + Cache + ZK)
+
+**Phase 3: Orchestration**
+7. WorkflowExecutor (needs all services above)
+8. Complete ExecutorConsumer (wire everything)
+
+**Phase 4: API**
+9. Handlers + Routes (SignalHandler, WorkflowHandler, RunHandler)
+
+**Phase 5: Integration**
+10. Wire up ingestion service
+11. E2E testing
+
+**Start with Phase 1** - domain models are foundation for everything else.
+
+Ready to build Signal, Workflow, WorkflowRun, Action models?
