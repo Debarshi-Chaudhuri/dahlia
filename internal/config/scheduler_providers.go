@@ -1,6 +1,8 @@
 package config
 
 import (
+	"context"
+
 	"dahlia/commons/routes"
 	"dahlia/commons/server"
 	cache "dahlia/internal/cache/iface"
@@ -14,6 +16,7 @@ import (
 	awsdynamodb "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/fx"
 )
 
 // ProvideJobRepository provides job repository
@@ -27,13 +30,13 @@ func ProvideScheduler(
 	jobRepo repository.JobRepository,
 	sqsClient *sqs.Client,
 	log logger.Logger,
-) *service.Scheduler {
+) service.IScheduler {
 	nodeID := "NODE1" // Can be made configurable via env var
 	return service.NewScheduler(cache, jobRepo, sqsClient, nodeID, log)
 }
 
 // ProvideSchedulerHandler provides scheduler handler
-func ProvideSchedulerHandler(scheduler *service.Scheduler, log logger.Logger) *handler.SchedulerHandler {
+func ProvideSchedulerHandler(scheduler service.IScheduler, log logger.Logger) *handler.SchedulerHandler {
 	return handler.NewSchedulerHandler(scheduler, log)
 }
 
@@ -66,4 +69,18 @@ func ProvideSchedulerRouteInitializer(
 		internalRoutes.InitHealthRoutes(router, healthHandler, deps.Logger)
 		internalRoutes.InitSchedulerRoutes(router, schedulerHandler, deps.Logger)
 	}
+}
+
+// ManageSchedulerLifecycle manages the scheduler's start and stop lifecycle
+func ManageSchedulerLifecycle(lc fx.Lifecycle, scheduler service.IScheduler, srv *server.HTTPServer) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			// Start scheduler cron
+			return scheduler.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			// Stop scheduler cron
+			return scheduler.Stop(ctx)
+		},
+	})
 }

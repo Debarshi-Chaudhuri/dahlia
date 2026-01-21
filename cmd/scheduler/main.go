@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
-
 	"dahlia/commons/config"
 	"dahlia/commons/server"
 	internalConfig "dahlia/internal/config"
-	"dahlia/internal/service"
 
 	"go.uber.org/fx"
 )
@@ -31,17 +28,6 @@ func main() {
 			config.ProvideRouter,
 			server.NewHTTPServer,
 		),
-		fx.Invoke(func(lc fx.Lifecycle, scheduler *service.Scheduler, srv *server.HTTPServer) {
-			lc.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error {
-					// Start scheduler cron
-					return scheduler.Start(ctx)
-				},
-				OnStop: func(ctx context.Context) error {
-					// Stop scheduler cron
-					return scheduler.Stop(ctx)
-				},
-			})
-		}),
+		fx.Invoke(internalConfig.ManageSchedulerLifecycle),
 	).Run()
 }

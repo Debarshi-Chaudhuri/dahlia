@@ -11,7 +11,7 @@ import (
 )
 
 type SchedulerHandler struct {
-	scheduler *service.Scheduler
+	scheduler service.IScheduler
 	logger    logger.Logger
 }
 
@@ -32,7 +32,7 @@ type ScheduleResponse struct {
 }
 
 // NewSchedulerHandler creates a new scheduler handler
-func NewSchedulerHandler(scheduler *service.Scheduler, log logger.Logger) *SchedulerHandler {
+func NewSchedulerHandler(scheduler service.IScheduler, log logger.Logger) *SchedulerHandler {
 	return &SchedulerHandler{
 		scheduler: scheduler,
 		logger:    log.With(logger.String("component", "scheduler_handler")),

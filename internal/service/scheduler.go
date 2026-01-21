@@ -26,6 +26,13 @@ const (
 	`
 )
 
+type IScheduler interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	ScheduleJob(ctx context.Context, job *domain.ScheduledJob) error
+	ScheduleWithDelay(ctx context.Context, jobName, queueName string, delaySeconds int, jobDetails map[string]interface{}) (*domain.ScheduledJob, error)
+}
+
 type Scheduler struct {
 	cache     cache.Cache
 	jobRepo   repository.JobRepository
@@ -43,7 +50,7 @@ func NewScheduler(
 	sqsClient *sqs.Client,
 	nodeID string,
 	log logger.Logger,
-) *Scheduler {
+) IScheduler {
 	return &Scheduler{
 		cache:     cache,
 		jobRepo:   jobRepo,

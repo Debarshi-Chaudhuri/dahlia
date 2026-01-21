@@ -93,7 +93,7 @@ func setupIntegrationTest(t *testing.T) *integrationTestSetup {
 	jobRepo := dynamodbRepo.NewJobRepository(dynamoClient, log)
 
 	// Create scheduler
-	scheduler := NewScheduler(cache, jobRepo, sqsClient, testNodeID, log)
+	scheduler := NewScheduler(cache, jobRepo, sqsClient, testNodeID, log).(*Scheduler)
 
 	return &integrationTestSetup{
 		scheduler: scheduler,
