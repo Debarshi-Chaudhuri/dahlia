@@ -131,7 +131,7 @@ func (e *actionExecutor) executeDelay(ctx context.Context, action domain.Action,
 		"workflow_id":      workflowID,
 		"workflow_version": workflowVersion,
 		"run_id":           runID,
-		"resume_from":      fmt.Sprintf("ACTION_%d", currentActionIndex+1),
+		"resume_from":      fmt.Sprintf("ACTION_%d", currentActionIndex),
 	}
 
 	if delaySeconds < 60 {
