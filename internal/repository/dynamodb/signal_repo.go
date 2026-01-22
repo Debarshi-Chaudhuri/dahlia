@@ -37,7 +37,7 @@ func (r *signalRepository) Create(ctx context.Context, signal *domain.Signal) er
 		return fmt.Errorf("failed to marshal signal: %w", err)
 	}
 
-	// Conditional write to prevent duplicates
+	// Conditional write to prevent duplicates - signal_id is now composite of type+org+timestamp
 	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName:           aws.String(r.tableName),
 		Item:                item,
@@ -48,12 +48,20 @@ func (r *signalRepository) Create(ctx context.Context, signal *domain.Signal) er
 		// Check if it's a duplicate
 		if _, ok := err.(*types.ConditionalCheckFailedException); ok {
 			r.logger.Warn("duplicate signal detected",
-				logger.String("signal_id", signal.SignalID))
-			return fmt.Errorf("duplicate signal: %s", signal.SignalID)
+				logger.String("signal_type", signal.SignalType),
+				logger.String("org_id", signal.OrgID),
+				logger.String("timestamp", signal.Timestamp))
+			return ErrDuplicateSignal
 		}
 		r.logger.Error("failed to create signal", logger.Error(err))
 		return fmt.Errorf("failed to create signal: %w", err)
 	}
+
+	r.logger.Debug("signal created successfully",
+		logger.String("signal_id", signal.SignalID),
+		logger.String("signal_type", signal.SignalType),
+		logger.String("org_id", signal.OrgID),
+		logger.String("timestamp", signal.Timestamp))
 
 	return nil
 }
@@ -186,7 +194,7 @@ func (r *signalRepository) GetSignalsSince(ctx context.Context, signalType, orgI
 	})
 
 	if err != nil {
-		r.logger.Error("failed to query signals since timestamp", 
+		r.logger.Error("failed to query signals since timestamp",
 			logger.String("since", sinceTimestamp),
 			logger.Error(err))
 		return nil, fmt.Errorf("failed to query signals since %s: %w", sinceTimestamp, err)

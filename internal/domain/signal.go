@@ -1,9 +1,8 @@
 package domain
 
 import (
+	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Signal represents an incoming signal from external systems
@@ -31,8 +30,10 @@ func NewSignal(signalType, orgID string, value, metadata map[string]interface{},
 		metadata = make(map[string]interface{})
 	}
 
+	timestampInt := timestamp.UnixMilli()
+
 	return &Signal{
-		SignalID:        uuid.New().String(),
+		SignalID:        signalType + "#" + orgID + "#" + strconv.FormatInt(timestampInt, 10),
 		Timestamp:       timestamp.Format(time.RFC3339),
 		SignalType:      signalType,
 		OrgID:           orgID,

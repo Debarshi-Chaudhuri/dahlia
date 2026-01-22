@@ -295,49 +295,163 @@ ZK_SERVERS=localhost:2181
 - Cache refresh triggers
 - Future: Leader election
 
-## 🚧 Implementation Status
+## 🧪 Complete Usage Examples
 
-### ✅ Completed
-- [x] Health handlers with standardized responses
-- [x] Generic HTTP server with FX lifecycle
-- [x] Modular provider pattern configuration
-- [x] Ultra-minimal main.go files (26 lines each)
-- [x] Structured logging with Zap
-- [x] VS Code debug configurations
-- [x] Docker infrastructure setup
+### 1. Create an Escalation Workflow
+```bash
+curl -X POST http://localhost:8090/api/v1/workflows \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Internet Downtime Detection & Escalation",
+    "signal_type": "internet_signal",
+    "conditions": [
+      {
+        "type": "absence",
+        "duration": "5m"
+      }
+    ],
+    "actions": [
+      {
+        "type": "slack", 
+        "target": "#network-ops",
+        "message": "🚨 No heartbeat from {{org_id}} for 5 minutes - investigating"
+      },
+      {
+        "type": "delay",
+        "duration": "15m"
+      },
+      {
+        "type": "slack",
+        "target": "@on-call-engineer", 
+        "message": "🔥 ESCALATION: {{org_id}} still unreachable after 20 minutes!"
+      }
+    ]
+  }'
+```
 
-### 🔄 In Progress
-- [ ] Domain models & repositories
-- [ ] Workflow execution engine
-- [ ] Condition evaluators
-- [ ] Action executors (Slack/webhook mocks)
-- [ ] Scheduler with Redis buckets
-- [ ] ZooKeeper coordination
-- [ ] API endpoints implementation
+### 2. Send Heartbeat Signals
+```bash
+# Normal heartbeat signal
+curl -X POST http://localhost:8090/api/v1/signals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signal_type": "internet_signal",
+    "org_id": "datacenter_east", 
+    "value": {"status": "online", "latency_ms": 45},
+    "metadata": {"region": "us-east-1"},
+    "timestamp": "2025-01-22T15:30:00Z"
+  }'
 
-## Recommended Order
+# Response: {"signal_id": "internet_signal#datacenter_east#1737562200000", "workflows_queued": 1}
+```
 
-**Phase 1: Foundation (Data Layer)**
-1. Domain models (Signal, Workflow, WorkflowRun, Action)
-2. Repository interfaces
-3. DynamoDB implementations
+### 3. Test Escalation Flow
+```bash
+# 1. Send initial signal
+curl -X POST http://localhost:8090/api/v1/signals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signal_type": "internet_signal",
+    "org_id": "server_prod",
+    "timestamp": "2025-01-22T16:00:00Z"
+  }'
 
-**Phase 2: Core Services**
-4. ConditionEvaluator (simple, no dependencies)
-5. ActionExecutor (needs slack client only)
-6. WorkflowManager (needs WorkflowRepo + Cache + ZK)
+# 2. Check workflow execution status
+curl http://localhost:8090/api/v1/runs
+```
 
-**Phase 3: Orchestration**
-7. WorkflowExecutor (needs all services above)
-8. Complete ExecutorConsumer (wire everything)
+### 4. View All Workflows
+```bash
+curl http://localhost:8090/api/v1/workflows
 
-**Phase 4: API**
-9. Handlers + Routes (SignalHandler, WorkflowHandler, RunHandler)
+# Response:
+# {
+#   "workflows": [
+#     {
+#       "workflow_id": "internet_downtime_detection",
+#       "version": 1,
+#       "name": "Internet Downtime Detection & Escalation",
+#       "signal_type": "internet_signal",
+#       ...
+#     }
+#   ]
+# }
+```
 
-**Phase 5: Integration**
-10. Wire up ingestion service
-11. E2E testing
+## 🔧 Advanced Configuration
 
-**Start with Phase 1** - domain models are foundation for everything else.
+### Custom Conditions
+```bash
+# Numeric condition example
+curl -X POST http://localhost:8090/api/v1/workflows \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "High CPU Alert",
+    "signal_type": "cpu_metrics",
+    "conditions": [
+      {
+        "type": "numeric",
+        "field": "value.cpu_percent",
+        "operator": ">",
+        "value": 80
+      }
+    ],
+    "actions": [
+      {
+        "type": "slack",
+        "target": "#devops",
+        "message": "⚠️ CPU usage is {{value.cpu_percent}}% on {{org_id}}"
+      }
+    ]
+  }'
+```
 
-Ready to build Signal, Workflow, WorkflowRun, Action models?
+### Environment Variables
+```bash
+# Production configuration
+export AWS_ENDPOINT=""  # Remove for real AWS
+export AWS_REGION=us-west-2
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
+export REDIS_ADDR=your-redis-cluster:6379
+export ZK_SERVERS=zk1:2181,zk2:2181,zk3:2181
+export SLACK_BOT_TOKEN=xoxb-your-slack-token
+```
+
+## 📊 Monitoring & Debugging
+
+### Health Checks
+```bash
+# Service health
+curl http://localhost:8090/health  # Ingestion service
+curl http://localhost:8091/health  # Scheduler service
+
+# Infrastructure health
+curl http://localhost:4566/health  # LocalStack
+redis-cli -h localhost ping        # Redis
+```
+
+### Queue Monitoring
+```bash
+# Check SQS queue depth
+aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+  --queue-url http://localhost:4566/000000000000/executor-queue \
+  --attribute-names ApproximateNumberOfMessages
+
+# View SQS admin UI
+open http://localhost:9080
+```
+
+### Database Inspection
+```bash
+# List DynamoDB tables
+aws --endpoint-url=http://localhost:4566 dynamodb list-tables
+
+# View DynamoDB admin
+open http://localhost:9000
+
+# Check specific signal
+aws --endpoint-url=http://localhost:4566 dynamodb get-item \
+  --table-name signals \
+  --key '{"signal_id": {"S": "internet_signal#datacenter_east#1737562200000"}}'
+```

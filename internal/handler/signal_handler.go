@@ -9,6 +9,7 @@ import (
 	"dahlia/internal/domain"
 	"dahlia/internal/dto"
 	"dahlia/internal/logger"
+	"dahlia/internal/repository/dynamodb"
 	repositoryIface "dahlia/internal/repository/iface"
 	"dahlia/internal/service"
 )
@@ -84,6 +85,33 @@ func (h *SignalHandler) CreateSignalService(
 
 	// Now save signal to DynamoDB after queuing
 	if err := h.signalRepo.Create(ctx, signal); err != nil {
+		// Check if it's a duplicate signal
+		if dynamodb.IsDuplicateSignalError(err) {
+			// Get the existing signal to return its actual ID
+			existingSignal, getErr := h.signalRepo.GetByID(ctx, signal.SignalID)
+			if getErr != nil {
+				h.logger.Error("failed to get existing duplicate signal",
+					logger.String("signal_id", signal.SignalID),
+					logger.Error(getErr))
+				// Even if we can't get it, return success with the computed ID
+				existingSignal = signal
+			}
+
+			h.logger.Info("duplicate signal ignored",
+				logger.String("signal_type", signal.SignalType),
+				logger.String("org_id", signal.OrgID),
+				logger.String("timestamp", signal.Timestamp),
+				logger.String("existing_signal_id", existingSignal.SignalID),
+				logger.Int("workflows_already_queued", queuedCount),
+			)
+			// Return success for duplicate signals with existing signal ID
+			// This prevents duplicate processing while maintaining idempotency
+			return dto.CreateSignalResponse{
+				SignalID:        existingSignal.SignalID,
+				WorkflowsQueued: queuedCount,
+			}, nil
+		}
+
 		h.logger.Error("failed to save signal to DynamoDB",
 			logger.String("signal_id", signal.SignalID),
 			logger.Int("workflows_already_queued", queuedCount),
